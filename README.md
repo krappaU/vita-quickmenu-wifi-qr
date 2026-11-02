@@ -8,9 +8,13 @@ The phone shows a QR code. On the Vita, hold the PS button and tap **Scan Wi-Fi 
 phone's screen against the back of the Vita over the camera, then pull it slowly away. iOS shares
 the same code format in its Wi-Fi settings.
 
-There is no camera preview: QuickMenuReborn loads each image only once until the menu closes, so a
-live picture would fill the shell's video memory. Instead the status line says what the camera
-sees: nothing, a screen, part of a code (one or two of its corner squares), or a whole code.
+There is no picture preview: QuickMenuReborn loads each image only once until the menu closes, so a
+live picture would fill the shell's video memory. Instead, while scanning, a text viewfinder shows
+the camera's view about 3 times a second as 24×12 full-width characters (light, `・`, `■`), with
+`◎` where a QR corner square was found, and the status line says what the camera sees: nothing, a screen, part of a code (one or two of its corner squares), a whole code, or a
+whole code that doesn't decode within 2 s (too close for the fixed-focus camera: move it further).
+Frames where corner squares were found but nothing decoded are tried again sharpened and
+contrast-stretched, with a few settings: the camera's pictures of a close code are soft and dim.
 
 > **Status: first build, not yet tested on a console.** The parser, the profile writer and QR
 > decoding are tested on a PC (`scripts/test.sh`). What the Vita does is still to be checked, see
@@ -63,6 +67,8 @@ sees: nothing, a screen, part of a code (one or two of its corner squares), or a
 | `resolution` | `640` | `320` uses less memory, but dense codes (long passwords) then need the phone closer |
 | `scan_seconds` | `30` | how long to look for a code |
 | `connect_seconds` | `30` | how long to wait for the connection |
+| `viewfinder` | `1` | `0` turns off the text viewfinder |
+| `snapshots` | `0` | `1` saves frames that didn't decode as `frame-*.pgm`, for debugging. **They can show the password**, so delete them afterwards |
 | `live_labels` | `1` | update the status line while the menu is open. Set it to `0` if the shell crashes during a scan; the status then updates when you reopen the menu |
 
 ## Log
@@ -84,9 +90,9 @@ Things only a real Vita can answer. The log shows each of them:
       attribute (2026-11-02). `sceCameraStart` refused ordinary memory with `0x80024003` (not
       physically contiguous), the PHYCONT type failed with `0x80024A00` and CDRAM with `0x80024309`
       (full at 512 KB). Frames are real; decoding a 640×480 frame takes 35–45 ms.
-- [ ] **A code decodes.** If one is seen but not decoded, the first frame of each kind is saved as
-      `ux0:data/wifiqr/frame-screen.pgm`, `frame-partial.pgm`, `frame-code.pgm`, plus
-      `frame-last.pgm` when a scan ends without a code.
+- [ ] **A code decodes on the console.** A real frame with all three corners found (2026-11-02)
+      only decoded after sharpening and a contrast stretch, now built in. With `snapshots=1`, the
+      first frame of each kind that didn't decode is saved as `ux0:data/wifiqr/frame-<kind>.pgm`.
 - [ ] **The registry write is enough.** The new network shows in Settings → Network → Wi-Fi Settings
       and works.
 - [ ] **The DNS lookup starts the connection.** `netctl state: connecting` should follow

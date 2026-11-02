@@ -3,6 +3,8 @@
 #ifndef SCAN_H
 #define SCAN_H
 
+#include <stdint.h>
+
 typedef enum {
     SCAN_OK = 0,
     SCAN_CANCELLED,
@@ -17,12 +19,17 @@ typedef enum {
     SCAN_HINT_SCREEN,   // a bright area, probably the phone's screen
     SCAN_HINT_PARTIAL,  // one or two of the QR code's corner squares
     SCAN_HINT_CODE,     // a whole code: decoding
+    SCAN_HINT_BLURRY,   // a whole code for 2 s without decoding: too close for the fixed focus
 } scan_hint;
 
 typedef struct {
     int width, height;        // 640x480 or 320x240
     int timeout_ms;
     volatile int *cancel;     // set to non-zero to stop
+    int snapshots;            // save frames that didn't decode (they can show the password)
+    // Called about 3 times a second with the current frame and where corner squares are, for
+    // the text viewfinder. NULL: none.
+    void (*viewfinder)(const uint8_t *luma, int w, int h, const int *corners_x, const int *corners_y, int corners);
     // Called twice a second with the most promising hint since the last call.
     void (*progress)(int seconds_left, scan_hint hint);
 } scan_params;

@@ -45,6 +45,7 @@ add_executable(wifiqr
   src/qr_decode.c
   src/reg_vita.c
   src/scan.c
+  src/viewfinder.c
   src/wifi_qr.c
   ${TP}/quirc/lib/decode.c
   ${TP}/quirc/lib/identify.c

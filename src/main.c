@@ -13,12 +13,14 @@
 #include "log.h"
 #include "profiles.h"
 #include "scan.h"
+#include "viewfinder.h"
 #include "wifi_qr.h"
 
 #define SEPARATOR_ID "wifiqr_separator"
 #define TITLE_ID "wifiqr_title"
 #define BUTTON_ID "wifiqr_button"
 #define STATUS_ID "wifiqr_status"
+#define VIEW_ID "wifiqr_view"
 
 // The process's default user priority. Offsets from it are only allowed in a small range:
 // 0x10000100 + 0x40 failed with SCE_KERNEL_ERROR_ILLEGAL_PRIORITY (0x80028023) on 2026-11-02.
@@ -32,11 +34,14 @@ static struct {
     int resolution;     // 640 or 320
     int scan_seconds;
     int connect_seconds;
-} cfg = {1, 640, 30, 30};
+    int snapshots;      // save frames that didn't decode, for debugging: they can show the password
+    int viewfinder;     // the text viewfinder while scanning
+} cfg = {1, 640, 30, 30, 0, 1};
 
 static volatile int busy, cancel;
 static char status[256] = "Show the network's QR code (Android: Wi-Fi > Share)";
 static char button_label[32] = BUTTON_SCAN;
+static char view_text[VIEW_TEXT_MAX] = ""; // the text viewfinder while scanning, empty otherwise
 
 static void show(const char *id, const char *label) {
     if (cfg.live_labels) QuickMenuRebornSetWidgetLabel(id, label);
@@ -76,6 +81,8 @@ static void load_config(void) {
             else if (!sceClibStrcmp(line, "resolution")) cfg.resolution = v == 320 ? 320 : 640;
             else if (!sceClibStrcmp(line, "scan_seconds") && v > 0) cfg.scan_seconds = v;
             else if (!sceClibStrcmp(line, "connect_seconds") && v > 0) cfg.connect_seconds = v;
+            else if (!sceClibStrcmp(line, "snapshots")) cfg.snapshots = v != 0;
+            else if (!sceClibStrcmp(line, "viewfinder")) cfg.viewfinder = v != 0;
         }
         line = next;
     }
@@ -105,8 +112,20 @@ static void backup_profiles(void) {
     done = 1;
 }
 
+// The text viewfinder (see viewfinder.h): what the back camera sees, ~3 times a second.
+static void on_viewfinder(const uint8_t *luma, int w, int h, const int *cx, const int *cy, int corners) {
+    viewfinder_render(luma, w, h, w, cx, cy, corners, view_text, sizeof view_text);
+    show(VIEW_ID, view_text);
+}
+
+static void view_clear(void) {
+    view_text[0] = 0;
+    show(VIEW_ID, view_text);
+}
+
 static void on_scan_progress(int seconds_left, scan_hint hint) {
     switch (hint) {
+    case SCAN_HINT_BLURRY: set_status("Code seen but blurry: hold it a bit further away (%d s)", seconds_left); break;
     case SCAN_HINT_CODE: set_status("QR code in view, hold still... (%d s)", seconds_left); break;
     case SCAN_HINT_PARTIAL: set_status("Part of the code in view: center it in the camera (%d s)", seconds_left); break;
     case SCAN_HINT_SCREEN: set_status("Screen in view, looking for the code... (%d s)", seconds_left); break;
@@ -133,9 +152,12 @@ static int worker(SceSize args, void *argp) {
         .timeout_ms = cfg.scan_seconds * 1000,
         .cancel = &cancel,
         .progress = on_scan_progress,
+        .snapshots = cfg.snapshots,
+        .viewfinder = cfg.viewfinder ? on_viewfinder : NULL,
     };
     int cam_err = 0;
     scan_result sr = scan_qr(&sp, payload, sizeof payload, &cam_err);
+    view_clear();
     switch (sr) {
     case SCAN_OK: break;
     case SCAN_CANCELLED: set_status("Cancelled"); goto done;
@@ -209,6 +231,7 @@ BUTTON_HANDLER(on_button) {
 // (setting the status label from the button's handler froze the shell on 2026-11-02).
 ONLOAD_HANDLER(on_load) {
     if (!sceClibStrcmp(id, STATUS_ID)) QuickMenuRebornSetWidgetLabel(STATUS_ID, status);
+    else if (!sceClibStrcmp(id, VIEW_ID)) QuickMenuRebornSetWidgetLabel(VIEW_ID, view_text);
     else if (!sceClibStrcmp(id, BUTTON_ID)) QuickMenuRebornSetWidgetLabel(BUTTON_ID, button_label);
 }
 
@@ -234,6 +257,13 @@ int module_start(SceSize args, void *argp) {
     QuickMenuRebornSetWidgetColor(STATUS_ID, 1, 1, 1, 1);
     QuickMenuRebornSetWidgetLabel(STATUS_ID, status);
     QuickMenuRebornAssignOnLoadHandler(on_load, STATUS_ID);
+
+    // 12 lines of full-width characters; the height is a guess at the system font's line pitch.
+    QuickMenuRebornRegisterWidget(VIEW_ID, NULL, text);
+    QuickMenuRebornSetWidgetSize(VIEW_ID, SCE_PLANE_WIDTH, 420, 0, 0);
+    QuickMenuRebornSetWidgetColor(VIEW_ID, 1, 1, 1, 1);
+    QuickMenuRebornSetWidgetLabel(VIEW_ID, view_text);
+    QuickMenuRebornAssignOnLoadHandler(on_load, VIEW_ID);
     return SCE_KERNEL_START_SUCCESS;
 }
 
@@ -241,6 +271,7 @@ int module_stop(SceSize args, void *argp) {
     (void)args, (void)argp;
     cancel = 1;
     for (int i = 0; busy && i < 100; i++) sceKernelDelayThread(50 * 1000);
+    QuickMenuRebornUnregisterWidget(VIEW_ID);
     QuickMenuRebornUnregisterWidget(STATUS_ID);
     QuickMenuRebornUnregisterWidget(BUTTON_ID);
     QuickMenuRebornUnregisterWidget(TITLE_ID);

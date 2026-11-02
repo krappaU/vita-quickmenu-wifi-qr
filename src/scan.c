@@ -180,8 +180,9 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
         goto out_stop;
     }
 
-    static const char *const hint_names[] = {"nothing", "screen", "partial", "code"};
-    SceUInt64 start = sceKernelGetProcessTimeWide(), last_report = 0, last_diag = 0;
+    static const char *const hint_names[] = {"nothing", "screen", "partial", "code", "blurry"};
+    SceUInt64 code_since = 0; // when the current run of frames with a whole code began, 0 if none
+    SceUInt64 start = sceKernelGetProcessTimeWide(), last_report = 0, last_diag = 0, last_view = 0;
     int frames = 0, snapped = 0; // snapped: bit per hint whose first frame was saved
     scan_hint best = SCAN_HINT_NOTHING; // the most promising hint since the last report
     uint8_t *y = cam.y;
@@ -217,24 +218,36 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
             y = rd.pIBase;
         frames++;
         SceUInt64 t0 = sceKernelGetProcessTimeWide();
-        qr_stats q = {0, 0};
+        qr_stats q;
+        sceClibMemset(&q, 0, sizeof q);
         int n = qr_decode(dec, y, cam.w, payload, payload_size, &q);
         unsigned decode_ms = (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000);
         frame_stats f = measure(y, cam.w, cam.h);
         scan_hint h = hint_for(&f, &q);
+        if (h == SCAN_HINT_CODE) {
+            if (!code_since) code_since = elapsed ? elapsed : 1;
+            else if (elapsed - code_since >= 2000) h = SCAN_HINT_BLURRY;
+        } else if (h < SCAN_HINT_PARTIAL) {
+            code_since = 0;
+        }
         if (h > best) best = h;
+        if (p->viewfinder && (frames == 1 || elapsed - last_view >= 300)) {
+            last_view = elapsed;
+            int nc = q.capstones < 4 ? q.capstones : 4;
+            p->viewfinder(y, cam.w, cam.h, q.corner_x, q.corner_y, nc);
+        }
 
         if (frames <= 2 || elapsed - last_diag >= 1000 || (h > SCAN_HINT_NOTHING && !(snapped & (1 << h)))) {
             last_diag = elapsed;
             log_printf("frame %u at %u ms: Y min %u max %u mean %u, bright %u%%, 0x55 %u%%, corners %d, codes %d, "
-                       "decode %u ms -> %s",
+                       "decode %u ms (sharpened passes %d) -> %s",
                        (unsigned)rd.frame, (unsigned)elapsed, f.min, f.max, f.mean, f.bright_pct, f.marker_pct,
-                       q.capstones, q.codes, decode_ms, hint_names[h]);
+                       q.capstones, q.codes, decode_ms, q.enhanced, hint_names[h]);
         }
         // The first frame of each kind, to see why it didn't decode.
         if (h > SCAN_HINT_NOTHING && !(snapped & (1 << h)) && n == 0) {
             snapped |= 1 << h;
-            save_pgm(hint_names[h], y, cam.w, cam.h);
+            if (p->snapshots) save_pgm(hint_names[h], y, cam.w, cam.h);
         }
         if (n > 0) {
             result = SCAN_OK;
@@ -242,7 +255,7 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
         }
         sceKernelDelayThread(1000); // let the shell's own threads run between frames
     }
-    if (result != SCAN_OK && frames > 0) save_pgm("last", y, cam.w, cam.h);
+    if (p->snapshots && result != SCAN_OK && frames > 0) save_pgm("last", y, cam.w, cam.h);
     log_printf("scan: %d frames at %dx%d in %u ms, result %d", frames, cam.w, cam.h,
                (unsigned)((sceKernelGetProcessTimeWide() - start) / 1000), result);
 

@@ -17,6 +17,8 @@ void qr_decoder_free(qr_decoder *d);
 typedef struct {
     int capstones; // QR corner squares found: 1-2 means part of a code is in view
     int codes;     // codes found (all three corners), decoded or not
+    int enhanced;  // sharpened passes run (corner squares seen, plain pass failed); 0 if none
+    int corner_x[4], corner_y[4]; // centres of the first corner squares found (capstones, up to 4)
 } qr_stats;
 
 // luma: width*height bytes, one row every `pitch` bytes. Returns the payload length (0 if no
