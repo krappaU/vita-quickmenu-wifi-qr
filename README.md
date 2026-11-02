@@ -27,9 +27,11 @@ around the estimate.
 
 ## How it works
 
-1. **Widget.** [QuickMenuReborn](https://github.com/Ibrahim778/QuickMenuReborn) adds the widget
-   to the Quick Menu. The plugin runs in SceShell, the system shell that stays open next to every
-   game, so the game keeps running.
+1. **Plugins.** The core (`wifiqr.suprx`) runs in SceShell, the system shell that stays open next
+   to every game, so the game keeps running. Front ends call its API (`src/wifiqr_api.h`): for now
+   the Quick Menu button (`wifiqr_qm.suprx`, through
+   [QuickMenuReborn](https://github.com/Ibrahim778/QuickMenuReborn)); next, an entry in the
+   system's Wi-Fi Settings popup.
 2. **Scan.** It reads 640×480 frames from the back camera (320×240 if memory is short) and decodes
    them with [quirc](https://github.com/dlbeer/quirc) until it finds a code, for up to 30 seconds.
    The camera needs physically contiguous memory, which is scarce in SceShell, so the plugin tries
@@ -63,19 +65,29 @@ around the estimate.
 
 ## Install
 
-1. Install [QuickMenuReborn](https://github.com/Ibrahim778/QuickMenuReborn) (its plugin under
-   `*main` in your taiHEN config, plus the `ur0:QuickMenuReborn/` folder with `qmr_plugin.rco`).
-2. Copy `wifiqr.suprx` into `ur0:QuickMenuReborn/` (`ux0:` if that's where your QuickMenuReborn
-   folder is). Don't add it to `config.txt`: QuickMenuReborn loads it.
-3. For the camera preview: copy `wifiqr_kernel.skprx` to `ur0:tai/` and add it under `*KERNEL` in
-   `ur0:tai/config.txt`:
-   ```
-   *KERNEL
-   ur0:tai/wifiqr_kernel.skprx
-   ```
-   It hooks `ksceDisplaySetFrameBufInternal` with the NIDs PSVshell uses, known for firmware 3.60
-   and 3.65. If the hook fails, the log says so and the text viewfinder is used.
-4. Reboot.
+Three plugins:
+
+| File | What | Where |
+|---|---|---|
+| `wifiqr.suprx` | the core: camera, decoding, saving, connecting | `ur0:tai/`, under `*main` |
+| `wifiqr_qm.suprx` | the Quick Menu button | `ur0:QuickMenuReborn/` (needs [QuickMenuReborn](https://github.com/Ibrahim778/QuickMenuReborn)) |
+| `wifiqr_kernel.skprx` | the camera preview over the shell's frames (optional) | `ur0:tai/`, under `*KERNEL` |
+
+```
+*KERNEL
+ur0:tai/wifiqr_kernel.skprx
+*main
+ur0:tai/wifiqr.suprx
+```
+
+Use the `config.txt` taiHEN actually reads: `ux0:tai/config.txt` if it exists, else
+`ur0:tai/config.txt`. Remove the old single `wifiqr.suprx` from `ur0:QuickMenuReborn/` (the
+button is now `wifiqr_qm.suprx`). The kernel plugin hooks `ksceDisplaySetFrameBufInternal` with
+the NIDs PSVshell uses, known for firmware 3.60 and 3.65; without it, or if the hook fails, the
+button shows a text viewfinder instead. Reboot after installing.
+
+The button finds the core at run time (`taiGetModuleExportFunc`), so the order the plugins load in
+doesn't matter; without the core it says so.
 
 ## Settings
 

@@ -46,8 +46,10 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin-printf -fno-math-errno -DNDEBUG")
 add_compile_definitions(QUIRC_FLOAT_TYPE=float QUIRC_USE_TGMATH)
 
+# Core: wifiqr.suprx, loaded into SceShell by taiHEN (*main). Scanning, saving, connecting, and
+# the API front ends call (src/wifiqr_api.h).
 add_executable(wifiqr
-  src/main.c
+  src/core.c
   src/connect.c
   src/libc_shim.c
   src/log.c
@@ -62,16 +64,15 @@ add_executable(wifiqr
   ${TP}/quirc/lib/quirc.c
   ${TP}/quirc/lib/version_db.c
 )
-add_dependencies(wifiqr qmr_stubs shell_stubs wifiqr_kernel_stubs)
-target_include_directories(wifiqr PRIVATE src kernel ${TP}/quirc/lib ${QMR_INC})
+add_dependencies(wifiqr shell_stubs wifiqr_kernel_stubs)
+target_include_directories(wifiqr PRIVATE src kernel ${TP}/quirc/lib)
 # quirc's own warnings are not ours to fix
 set_source_files_properties(${TP}/quirc/lib/decode.c src/quirc_ext.c ${TP}/quirc/lib/quirc.c
   ${TP}/quirc/lib/version_db.c PROPERTIES COMPILE_FLAGS "-w")
 
-target_link_directories(wifiqr PRIVATE ${QMR_STUBS} ${SHELL_STUBS} ${CMAKE_BINARY_DIR}/wifiqr_kernel_stubs)
+target_link_directories(wifiqr PRIVATE ${SHELL_STUBS} ${CMAKE_BINARY_DIR}/wifiqr_kernel_stubs)
 target_link_options(wifiqr PRIVATE -nostdlib)
 target_link_libraries(wifiqr
-  QuickMenuReborn_stub
   WifiQrKernel_stub_weak  # optional: without the kernel plugin, its calls just fail
   SceShell_stub_weak
   SceCamera_stub
@@ -85,8 +86,30 @@ target_link_libraries(wifiqr
   SceSysmem_stub
   gcc
 )
+vita_create_self(wifiqr.suprx wifiqr CONFIG ${CMAKE_SOURCE_DIR}/core.yml UNSAFE)
 
-vita_create_self(wifiqr.suprx wifiqr CONFIG ${CMAKE_SOURCE_DIR}/exports.yml UNSAFE)
+# The NIDs front ends look the API up by (src/wifiqr_api.h) must match the core's exports.
+add_custom_command(TARGET wifiqr POST_BUILD
+  COMMAND vita-elf-export u $<TARGET_FILE:wifiqr> ${CMAKE_SOURCE_DIR}/core.yml ${CMAKE_BINARY_DIR}/core_exports.yml
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check_nids.py ${CMAKE_BINARY_DIR}/core_exports.yml
+          ${CMAKE_SOURCE_DIR}/src/wifiqr_api.h
+  VERBATIM)
+
+# Quick Menu button: wifiqr_qm.suprx, loaded by QuickMenuReborn. Only widgets; calls the core.
+add_executable(wifiqr_qm src/qm.c)
+add_dependencies(wifiqr_qm qmr_stubs)
+target_include_directories(wifiqr_qm PRIVATE src ${QMR_INC})
+target_link_directories(wifiqr_qm PRIVATE ${QMR_STUBS})
+target_link_options(wifiqr_qm PRIVATE -nostdlib)
+target_link_libraries(wifiqr_qm
+  QuickMenuReborn_stub
+  taihen_stub
+  SceIofilemgr_stub
+  SceKernelThreadMgr_stub
+  SceLibKernel_stub
+  gcc
+)
+vita_create_self(wifiqr_qm.suprx wifiqr_qm CONFIG ${CMAKE_SOURCE_DIR}/qm.yml UNSAFE)
 
 # Kernel helper: draws the camera preview over SceShell's frames (see kernel/main.c).
 add_executable(wifiqr_kernel kernel/main.c)

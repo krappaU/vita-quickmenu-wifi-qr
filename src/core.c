@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
-// Wi-Fi QR: a Quick Menu widget (via QuickMenuReborn, running in SceShell next to any game) that
-// scans a Wi-Fi QR code with the back camera, saves the network and connects to it.
+// Wi-Fi QR core: scans a Wi-Fi QR code with the back camera, saves the network the way the
+// system's Wi-Fi Settings does and connects to it. Loaded into SceShell by taiHEN (*main), it has
+// no UI of its own: front ends such as the Quick Menu button (qm.c) call its API (wifiqr_api.h)
+// and show what it reports.
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/modulemgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/rtc.h>
-#include <quickmenureborn/qm_reborn.h>
 #include <stdarg.h>
 
 #include "connect.h"
@@ -14,6 +15,7 @@
 #include "profiles.h"
 #include "scan.h"
 #include "viewfinder.h"
+#include "wifiqr_api.h"
 #include "wifiqr_kernel.h"
 
 // Exported by SceShell to its plugins (stubs/SceShell.yml): hands saved profiles to the shell's
@@ -21,36 +23,22 @@
 int SceShell_60129092(void *profiles, unsigned int count);
 #include "wifi_qr.h"
 
-#define SEPARATOR_ID "wifiqr_separator"
-#define TITLE_ID "wifiqr_title"
-#define BUTTON_ID "wifiqr_button"
-#define STATUS_ID "wifiqr_status"
-#define VIEW_ID "wifiqr_view"
-
 // The process's default user priority. Offsets from it are only allowed in a small range:
 // 0x10000100 + 0x40 failed with SCE_KERNEL_ERROR_ILLEGAL_PRIORITY (0x80028023) on 2026-11-02.
 #define WORKER_PRIORITY 0x10000100
 
-#define BUTTON_SCAN "Scan Wi-Fi QR"
-#define BUTTON_CANCEL "Cancel"
-
 static struct {
-    int live_labels;    // update labels from the worker thread while the menu is open
     int resolution;     // 640 or 320
     int scan_seconds;
     int connect_seconds;
     int snapshots;      // save frames that didn't decode, for debugging: they can show the password
     int viewfinder;     // the text viewfinder while scanning
-} cfg = {1, 640, 30, 30, 0, 1};
+} cfg = {640, 30, 30, 0, 1};
 
 static volatile int busy, cancel;
-static char status[256] = "Show the network's QR code (Android: Wi-Fi > Share)";
-static char button_label[32] = BUTTON_SCAN;
+static WifiQrListener listener; // the front end that started the current scan
+static char status[256];
 static char view_text[VIEW_TEXT_MAX] = ""; // the text viewfinder while scanning, empty otherwise
-
-static void show(const char *id, const char *label) {
-    if (cfg.live_labels) QuickMenuRebornSetWidgetLabel(id, label);
-}
 
 static void set_status(const char *fmt, ...) {
     va_list ap;
@@ -58,12 +46,11 @@ static void set_status(const char *fmt, ...) {
     sceClibVsnprintf(status, sizeof status, fmt, ap);
     va_end(ap);
     log_printf("status: %s", status);
-    show(STATUS_ID, status);
+    if (listener.status) listener.status(status, listener.ud);
 }
 
-static void set_button(const char *label) {
-    sceClibStrncpy(button_label, label, sizeof button_label - 1);
-    show(BUTTON_ID, button_label);
+static void show_view(const char *text) {
+    if (listener.view) listener.view(text, listener.ud);
 }
 
 static void load_config(void) {
@@ -82,8 +69,7 @@ static void load_config(void) {
             *eq = 0;
             int v = 0;
             for (char *p = eq + 1; *p >= '0' && *p <= '9'; p++) v = v * 10 + (*p - '0');
-            if (!sceClibStrcmp(line, "live_labels")) cfg.live_labels = v != 0;
-            else if (!sceClibStrcmp(line, "resolution")) cfg.resolution = v == 320 ? 320 : 640;
+            if (!sceClibStrcmp(line, "resolution")) cfg.resolution = v == 320 ? 320 : 640;
             else if (!sceClibStrcmp(line, "scan_seconds") && v > 0) cfg.scan_seconds = v;
             else if (!sceClibStrcmp(line, "connect_seconds") && v > 0) cfg.connect_seconds = v;
             else if (!sceClibStrcmp(line, "snapshots")) cfg.snapshots = v != 0;
@@ -160,12 +146,12 @@ static void on_preview(const uint8_t *luma, int w, int h, const int *cx, const i
 static void on_viewfinder(const uint8_t *luma, int w, int h, const int *cx, const int *cy, int corners) {
     if (kpreview == 2) return;
     viewfinder_render(luma, w, h, w, cx, cy, corners, view_text, sizeof view_text);
-    show(VIEW_ID, view_text);
+    show_view(view_text);
 }
 
 static void view_clear(void) {
     view_text[0] = 0;
-    show(VIEW_ID, view_text);
+    show_view(view_text);
 }
 
 static void on_scan_progress(int seconds_left, scan_hint hint) {
@@ -183,7 +169,7 @@ static void on_scan_progress(int seconds_left, scan_hint hint) {
 static int worker(SceSize args, void *argp) {
     (void)args, (void)argp;
     static char payload[1024];
-    log_printf("--- scan (resolution %d, live labels %d)", cfg.resolution, cfg.live_labels);
+    log_printf("--- scan (resolution %d)", cfg.resolution);
     static int listed;
     if (!listed) { // slow (~1.5 s per network), so once per session
         log_printf("saved networks (secrets masked):");
@@ -248,7 +234,6 @@ static int worker(SceSize args, void *argp) {
     }
 
     set_status("%s %s. Connecting...", c.ssid, profiles_result_str(po.result));
-    set_button(BUTTON_CANCEL);
     char now[40];
     connect_result cr = connect_now(c.ssid, cfg.connect_seconds * 1000, &cancel, now, sizeof now);
     switch (cr) {
@@ -261,69 +246,43 @@ static int worker(SceSize args, void *argp) {
     }
 
 done:
-    set_button(BUTTON_SCAN);
     busy = 0;
+    if (listener.busy) listener.busy(0, listener.ud);
     return sceKernelExitDeleteThread(0);
 }
 
-BUTTON_HANDLER(on_button) {
-    (void)id, (void)hash, (void)eventId, (void)userDat;
-    if (busy) {
-        cancel = 1;
-        set_status("Cancelling...");
-        return;
-    }
+// --- API (wifiqr_api.h) -----------------------------------------------------------------------
+
+int wifiqrScan(const WifiQrListener *l) {
+    if (busy) return WIFIQR_ERROR_BUSY;
+    sceClibMemset(&listener, 0, sizeof listener);
+    if (l) sceClibMemcpy(&listener, l, l->size < sizeof listener ? l->size : sizeof listener);
     load_config();
     SceUID th = sceKernelCreateThread("wifiqr_worker", worker, WORKER_PRIORITY, 0x10000, 0, 0, NULL);
     if (th < 0) {
-        set_status("Couldn't start (0x%08X)", (unsigned)th);
-        return;
+        log_printf("worker thread: 0x%08x", (unsigned)th);
+        return th;
     }
     busy = 1;
     cancel = 0;
-    set_button(BUTTON_CANCEL);
+    if (listener.busy) listener.busy(1, listener.ud);
     sceKernelStartThread(th, 0, NULL);
+    return 0;
 }
 
-// The menu was opened: show what happened while it was closed (or with live labels off).
-// QuickMenuReborn creates the widgets one by one and calls each one's handler right after
-// creating it, so a handler may only touch its own widget: the ones after it don't exist yet
-// (setting the status label from the button's handler froze the shell on 2026-11-02).
-ONLOAD_HANDLER(on_load) {
-    if (!sceClibStrcmp(id, STATUS_ID)) QuickMenuRebornSetWidgetLabel(STATUS_ID, status);
-    else if (!sceClibStrcmp(id, VIEW_ID)) QuickMenuRebornSetWidgetLabel(VIEW_ID, view_text);
-    else if (!sceClibStrcmp(id, BUTTON_ID)) QuickMenuRebornSetWidgetLabel(BUTTON_ID, button_label);
+int wifiqrCancel(void) {
+    if (busy) {
+        cancel = 1;
+        set_status("Cancelling...");
+    }
+    return 0;
 }
+
+int wifiqrIsBusy(void) { return busy; }
 
 int module_start(SceSize args, void *argp) {
     (void)args, (void)argp;
-    load_config();
-    QuickMenuRebornSeparator(SEPARATOR_ID, SCE_SEPARATOR_HEIGHT);
-
-    QuickMenuRebornRegisterWidget(TITLE_ID, NULL, text);
-    QuickMenuRebornSetWidgetSize(TITLE_ID, SCE_PLANE_WIDTH, 50, 0, 0);
-    QuickMenuRebornSetWidgetColor(TITLE_ID, 1, 1, 1, 1);
-    QuickMenuRebornSetWidgetLabel(TITLE_ID, "Wi-Fi QR");
-
-    QuickMenuRebornRegisterWidget(BUTTON_ID, NULL, button);
-    QuickMenuRebornSetWidgetSize(BUTTON_ID, 320, 75, 0, 0);
-    QuickMenuRebornSetWidgetColor(BUTTON_ID, 1, 1, 1, 1);
-    QuickMenuRebornSetWidgetLabel(BUTTON_ID, button_label);
-    QuickMenuRebornRegisterEventHanlder(BUTTON_ID, QMR_BUTTON_RELEASE_ID, on_button, NULL);
-    QuickMenuRebornAssignOnLoadHandler(on_load, BUTTON_ID);
-
-    QuickMenuRebornRegisterWidget(STATUS_ID, NULL, text);
-    QuickMenuRebornSetWidgetSize(STATUS_ID, SCE_PLANE_WIDTH, 60, 0, 0);
-    QuickMenuRebornSetWidgetColor(STATUS_ID, 1, 1, 1, 1);
-    QuickMenuRebornSetWidgetLabel(STATUS_ID, status);
-    QuickMenuRebornAssignOnLoadHandler(on_load, STATUS_ID);
-
-    // 12 lines of full-width characters; the height is a guess at the system font's line pitch.
-    QuickMenuRebornRegisterWidget(VIEW_ID, NULL, text);
-    QuickMenuRebornSetWidgetSize(VIEW_ID, SCE_PLANE_WIDTH, 420, 0, 0);
-    QuickMenuRebornSetWidgetColor(VIEW_ID, 1, 1, 1, 1);
-    QuickMenuRebornSetWidgetLabel(VIEW_ID, view_text);
-    QuickMenuRebornAssignOnLoadHandler(on_load, VIEW_ID);
+    // Nothing until a front end asks: this runs early in the shell's start-up.
     return SCE_KERNEL_START_SUCCESS;
 }
 
@@ -331,11 +290,6 @@ int module_stop(SceSize args, void *argp) {
     (void)args, (void)argp;
     cancel = 1;
     for (int i = 0; busy && i < 100; i++) sceKernelDelayThread(50 * 1000);
-    QuickMenuRebornUnregisterWidget(VIEW_ID);
-    QuickMenuRebornUnregisterWidget(STATUS_ID);
-    QuickMenuRebornUnregisterWidget(BUTTON_ID);
-    QuickMenuRebornUnregisterWidget(TITLE_ID);
-    QuickMenuRebornRemoveSeparator(SEPARATOR_ID);
     return SCE_KERNEL_STOP_SUCCESS;
 }
 

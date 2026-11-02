@@ -27,4 +27,5 @@ jobs:
           name: wifiqr
           path: |
             build/wifiqr.suprx
+            build/wifiqr_qm.suprx
             build/wifiqr_kernel.skprx

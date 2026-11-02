@@ -1,0 +1,16 @@
+WifiQr:
+  attributes: 0
+  version:
+    major: 1
+    minor: 0
+  main:
+    start: module_start
+    stop: module_stop
+  libraries:
+    WifiQr:
+      syscall: false
+      nid: 0x57514331
+      functions:
+        - wifiqrScan
+        - wifiqrCancel
+        - wifiqrIsBusy
