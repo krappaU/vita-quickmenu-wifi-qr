@@ -9,14 +9,21 @@
 #include <quickmenureborn/qm_reborn.h>
 #include <taihen.h>
 
+#include "log.h"
 #include "viewfinder.h"
 #include "wifiqr_api.h"
+
+// paf::Plugin::Find and paf::Plugin::GetInterface (stubs/ScePafToplevel.yml), called by their
+// mangled names: a member function takes the object as its first argument.
+void *_ZN3paf6Plugin4FindEPKc(const char *name);
+void *_ZNK3paf6Plugin12GetInterfaceEi(const void *plugin, int version);
 
 #define SEPARATOR_ID "wifiqr_separator"
 #define TITLE_ID "wifiqr_title"
 #define BUTTON_ID "wifiqr_button"
 #define STATUS_ID "wifiqr_status"
 #define VIEW_ID "wifiqr_view"
+#define WIFI_BUTTON_ID "wifiqr_wifi_button"
 
 #define BUTTON_SCAN "Scan Wi-Fi QR"
 #define BUTTON_CANCEL "Cancel"
@@ -86,6 +93,39 @@ static void on_busy(int busy, void *ud) {
 
 static const WifiQrListener listener = {sizeof(WifiQrListener), on_status, on_view, on_busy, NULL};
 
+// --- the system's Wi-Fi Settings popup ---------------------------------------------------------
+//
+// impose_net_plugin (the popup, in SceShell) publishes a version-1 interface of two functions
+// (3.65 build: SetInterface(1, table) in its start-up code):
+//   open(callback, userdata): returns 0 or an error (0x80102403 with a NULL callback or while
+//     busy); when the popup closes it calls callback(state 0x38, 0x3c, 0x40, result, userdata)
+//   close(): closes it with result 0x80102402
+typedef void (*popup_done_fn)(int a, int b, int c, int result, void *ud);
+typedef struct {
+    int (*open)(popup_done_fn done, void *ud);
+    int (*close)(void);
+} impose_net_iface;
+
+static void on_popup_done(int a, int b, int c, int result, void *ud) {
+    (void)ud;
+    log_printf("wifi popup closed: result 0x%08x (%d %d %d)", (unsigned)result, a, b, c);
+}
+
+static void open_wifi_popup(void) {
+    void *plugin = _ZN3paf6Plugin4FindEPKc("impose_net_plugin");
+    const impose_net_iface *iface = plugin ? _ZNK3paf6Plugin12GetInterfaceEi(plugin, 1) : NULL;
+    log_printf("wifi popup: plugin %p, interface %p", plugin, (const void *)iface);
+    if (!iface) {
+        sceClibSnprintf(status, sizeof status, "The Wi-Fi popup isn't loaded (plugin %p)", plugin);
+        show(STATUS_ID, status);
+        return;
+    }
+    QuickMenuRebornCloseMenu(); // the popup opens over the menu otherwise
+    int rc = iface->open(on_popup_done, NULL);
+    log_printf("wifi popup: open -> 0x%08x", (unsigned)rc);
+    if (rc < 0) sceClibSnprintf(status, sizeof status, "Couldn't open the Wi-Fi popup (0x%08X)", (unsigned)rc);
+}
+
 // --- widgets ----------------------------------------------------------------------------------
 
 BUTTON_HANDLER(on_button) {
@@ -107,6 +147,11 @@ BUTTON_HANDLER(on_button) {
         sceClibSnprintf(status, sizeof status, "Couldn't start (0x%08X)", (unsigned)rc);
         show(STATUS_ID, status);
     }
+}
+
+BUTTON_HANDLER(on_wifi_button) {
+    (void)id, (void)hash, (void)eventId, (void)userDat;
+    open_wifi_popup();
 }
 
 // The menu was opened: show what happened while it was closed (or with live labels off).
@@ -136,6 +181,12 @@ int module_start(SceSize args, void *argp) {
     QuickMenuRebornRegisterEventHanlder(BUTTON_ID, QMR_BUTTON_RELEASE_ID, on_button, NULL);
     QuickMenuRebornAssignOnLoadHandler(on_load, BUTTON_ID);
 
+    QuickMenuRebornRegisterWidget(WIFI_BUTTON_ID, NULL, button);
+    QuickMenuRebornSetWidgetSize(WIFI_BUTTON_ID, 320, 75, 0, 0);
+    QuickMenuRebornSetWidgetColor(WIFI_BUTTON_ID, 1, 1, 1, 1);
+    QuickMenuRebornSetWidgetLabel(WIFI_BUTTON_ID, "Wi-Fi Settings");
+    QuickMenuRebornRegisterEventHanlder(WIFI_BUTTON_ID, QMR_BUTTON_RELEASE_ID, on_wifi_button, NULL);
+
     QuickMenuRebornRegisterWidget(STATUS_ID, NULL, text);
     QuickMenuRebornSetWidgetSize(STATUS_ID, SCE_PLANE_WIDTH, 60, 0, 0);
     QuickMenuRebornSetWidgetColor(STATUS_ID, 1, 1, 1, 1);
@@ -160,6 +211,7 @@ int module_stop(SceSize args, void *argp) {
     }
     QuickMenuRebornUnregisterWidget(VIEW_ID);
     QuickMenuRebornUnregisterWidget(STATUS_ID);
+    QuickMenuRebornUnregisterWidget(WIFI_BUTTON_ID);
     QuickMenuRebornUnregisterWidget(BUTTON_ID);
     QuickMenuRebornUnregisterWidget(TITLE_ID);
     QuickMenuRebornRemoveSeparator(SEPARATOR_ID);

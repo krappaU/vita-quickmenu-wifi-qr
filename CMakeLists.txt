@@ -37,6 +37,16 @@ add_custom_command(
   DEPENDS ${CMAKE_SOURCE_DIR}/stubs/SceShell.yml)
 add_custom_target(shell_stubs DEPENDS ${SHELL_STUBS}/libSceShell_stub_weak.a)
 
+# The two PAF functions the Quick Menu button uses (stubs/ScePafToplevel.yml), linked weakly.
+set(PAF_STUBS ${CMAKE_BINARY_DIR}/paf_stubs)
+add_custom_command(
+  OUTPUT ${PAF_STUBS}/libScePafToplevel_stub_weak.a
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${PAF_STUBS}
+  COMMAND vita-libs-gen ${CMAKE_SOURCE_DIR}/stubs/ScePafToplevel.yml ${PAF_STUBS}
+  COMMAND make -C ${PAF_STUBS} -s
+  DEPENDS ${CMAKE_SOURCE_DIR}/stubs/ScePafToplevel.yml)
+add_custom_target(paf_stubs DEPENDS ${PAF_STUBS}/libScePafToplevel_stub_weak.a)
+
 # The header is included as <quickmenureborn/qm_reborn.h>.
 set(QMR_INC ${CMAKE_BINARY_DIR}/qmr_include)
 file(MAKE_DIRECTORY ${QMR_INC})
@@ -96,17 +106,19 @@ add_custom_command(TARGET wifiqr POST_BUILD
   VERBATIM)
 
 # Quick Menu button: wifiqr_qm.suprx, loaded by QuickMenuReborn. Only widgets; calls the core.
-add_executable(wifiqr_qm src/qm.c)
-add_dependencies(wifiqr_qm qmr_stubs)
+add_executable(wifiqr_qm src/qm.c src/log.c)
+add_dependencies(wifiqr_qm qmr_stubs paf_stubs)
 target_include_directories(wifiqr_qm PRIVATE src ${QMR_INC})
-target_link_directories(wifiqr_qm PRIVATE ${QMR_STUBS})
+target_link_directories(wifiqr_qm PRIVATE ${QMR_STUBS} ${PAF_STUBS})
 target_link_options(wifiqr_qm PRIVATE -nostdlib)
 target_link_libraries(wifiqr_qm
   QuickMenuReborn_stub
+  ScePafToplevel_stub_weak
   taihen_stub
   SceIofilemgr_stub
   SceKernelThreadMgr_stub
   SceLibKernel_stub
+  SceRtc_stub
   gcc
 )
 vita_create_self(wifiqr_qm.suprx wifiqr_qm CONFIG ${CMAKE_SOURCE_DIR}/qm.yml UNSAFE)
