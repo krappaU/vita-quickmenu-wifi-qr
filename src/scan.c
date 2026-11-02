@@ -182,6 +182,12 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
 
     static const char *const hint_names[] = {"nothing", "screen", "partial", "code", "blurry"};
     SceUInt64 code_since = 0; // when the current run of frames with a whole code began, 0 if none
+    // Exposure compensation, -20..0 (-2.0..0 EV). A lit phone screen in a dim room comes out pure
+    // white (log of 2026-11-02: max 255 over a quarter of the frame) because the camera exposes
+    // for the room: step it down while the bright area is clipped, back up when the frame is dark.
+    int ev = 0;
+    SceUInt64 last_ev = 0;
+    sceCameraSetEV(SCE_CAMERA_DEVICE_BACK, 0);
     SceUInt64 start = sceKernelGetProcessTimeWide(), last_report = 0, last_diag = 0, last_view = 0;
     int frames = 0, snapped = 0; // snapped: bit per hint whose first frame was saved
     scan_hint best = SCAN_HINT_NOTHING; // the most promising hint since the last report
@@ -225,6 +231,17 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
         const uint8_t *fr = qr_decoder_frame(dec); // cached copy: the camera's buffer is slow to read
         frame_stats f = measure(fr, cam.w, cam.h);
         scan_hint h = hint_for(&f, &q);
+        if (elapsed - last_ev >= 400) {
+            int want = ev;
+            if (f.max >= 250 && f.bright_pct >= 3 && ev > -20) want = ev - 5;
+            else if (f.max < 170 && ev < 0) want = ev + 5;
+            if (want != ev) {
+                rc = sceCameraSetEV(SCE_CAMERA_DEVICE_BACK, want);
+                log_printf("exposure %d -> %d (max %u, bright %u%%): 0x%08x", ev, want, f.max, f.bright_pct, rc);
+                if (rc >= 0) ev = want;
+                last_ev = elapsed;
+            }
+        }
         if (h == SCAN_HINT_CODE) {
             if (!code_since) code_since = elapsed ? elapsed : 1;
             else if (elapsed - code_since >= 2000) h = SCAN_HINT_BLURRY;
@@ -245,9 +262,9 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
         if (frames <= 2 || elapsed - last_diag >= 1000 || (h > SCAN_HINT_NOTHING && !(snapped & (1 << h)))) {
             last_diag = elapsed;
             log_printf("frame %u at %u ms: Y min %u max %u mean %u, bright %u%%, 0x55 %u%%, corners %d, codes %d, "
-                       "decode %u ms (sharpened passes %d) -> %s",
+                       "decode %u ms (setting %d), ev %d -> %s",
                        (unsigned)rd.frame, (unsigned)elapsed, f.min, f.max, f.mean, f.bright_pct, f.marker_pct,
-                       q.capstones, q.codes, decode_ms, q.enhanced, hint_names[h]);
+                       q.capstones, q.codes, decode_ms, q.enhanced, ev, hint_names[h]);
         }
         // The first frame of each kind, to see why it didn't decode.
         if (h > SCAN_HINT_NOTHING && !(snapped & (1 << h)) && n == 0) {

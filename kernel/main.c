@@ -31,8 +31,9 @@ static void draw(const SceDisplayFrameBuf *fb) {
     if (fb->pixelformat != SCE_DISPLAY_PIXELFORMAT_A8B8G8R8) return;
     const int ow = PREVIEW_W + 2 * BORDER, oh = PREVIEW_H + 2 * BORDER;
     if ((int)fb->width < ow + 2 * MARGIN || (int)fb->height < oh + 2 * MARGIN) return;
-    // Top right of the screen.
-    const int x0 = (int)fb->width - ow - MARGIN, y0 = MARGIN;
+    // Bottom middle: below the status line, over the (empty) viewfinder widget when the Quick
+    // Menu is scrolled to the end (top right covered the menu's items: photo of 2026-11-02).
+    const int x0 = ((int)fb->width - ow) / 2, y0 = (int)fb->height - oh - MARGIN;
     static uint32_t line[PREVIEW_W + 2 * BORDER];
     for (int row = 0; row < oh; row++) {
         int py = row - BORDER;

@@ -8,7 +8,7 @@ The phone shows a QR code. On the Vita, hold the PS button and tap **Scan Wi-Fi 
 phone's screen against the back of the Vita over the camera, then pull it slowly away. iOS shares
 the same code format in its Wi-Fi settings.
 
-While scanning, a 320×240 camera preview appears at the top right of the screen, with red boxes
+While scanning, a 320×240 camera preview appears at the bottom middle of the screen, with red boxes
 on the QR corner squares found. QuickMenuReborn can't show a changing picture (it loads each image
 once per menu opening and keeps it until the menu closes), so a small kernel plugin,
 `wifiqr_kernel.skprx`, draws it into SceShell's frames as they're shown, the way PSVshell draws its
@@ -100,11 +100,15 @@ Things only a real Vita can answer. The log shows each of them:
       attribute (2026-11-02). `sceCameraStart` refused ordinary memory with `0x80024003` (not
       physically contiguous), the PHYCONT type failed with `0x80024A00` and CDRAM with `0x80024309`
       (full at 512 KB). Frames are real; decoding a 640×480 frame takes 35–45 ms.
-- [ ] **A code decodes on the console.** A real frame with all three corners found (2026-11-02)
-      only decoded after sharpening and a contrast stretch, now built in. With `snapshots=1`, the
-      first frame of each kind that didn't decode is saved as `ux0:data/wifiqr/frame-<kind>.pgm`.
+- [x] **A printed code decodes on the console** (2026-11-02, a router's label, first try with the
+      picture preview) and the network is saved (slot 5, `wifi_security` 2).
+- [ ] **A code on a phone screen decodes.** It was in view and sharp in the preview but didn't
+      decode: the screen came out pure white (overexposed) and screens add moire. Now the exposure
+      steps down while the bright area is clipped, and a light blur is among the settings tried.
+      With `snapshots=1`, the first frame of each kind that didn't decode is saved as
+      `ux0:data/wifiqr/frame-<kind>.pgm`.
 - [ ] **The registry write is enough.** The new network shows in Settings → Network → Wi-Fi Settings
-      and works.
+      and works. (The first saved network wasn't connected to: the Vita was already on another.)
 - [ ] **The DNS lookup starts the connection.** `netctl state: connecting` should follow
       `trigger: DNS lookup`. If it only follows `trigger: TCP connect`, swap their order.
 - [ ] **Live label updates don't crash the shell** (`live_labels`).
