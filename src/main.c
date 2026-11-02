@@ -195,10 +195,12 @@ BUTTON_HANDLER(on_button) {
 }
 
 // The menu was opened: show what happened while it was closed (or with live labels off).
+// QuickMenuReborn creates the widgets one by one and calls each one's handler right after
+// creating it, so a handler may only touch its own widget: the ones after it don't exist yet
+// (setting the status label from the button's handler froze the shell on 2026-11-02).
 ONLOAD_HANDLER(on_load) {
-    (void)id;
-    QuickMenuRebornSetWidgetLabel(STATUS_ID, status);
-    QuickMenuRebornSetWidgetLabel(BUTTON_ID, button_label);
+    if (!sceClibStrcmp(id, STATUS_ID)) QuickMenuRebornSetWidgetLabel(STATUS_ID, status);
+    else if (!sceClibStrcmp(id, BUTTON_ID)) QuickMenuRebornSetWidgetLabel(BUTTON_ID, button_label);
 }
 
 int module_start(SceSize args, void *argp) {
@@ -222,6 +224,7 @@ int module_start(SceSize args, void *argp) {
     QuickMenuRebornSetWidgetSize(STATUS_ID, SCE_PLANE_WIDTH, 60, 0, 0);
     QuickMenuRebornSetWidgetColor(STATUS_ID, 1, 1, 1, 1);
     QuickMenuRebornSetWidgetLabel(STATUS_ID, status);
+    QuickMenuRebornAssignOnLoadHandler(on_load, STATUS_ID);
     return SCE_KERNEL_START_SUCCESS;
 }
 
