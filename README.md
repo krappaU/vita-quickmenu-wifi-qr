@@ -17,6 +17,9 @@ is shown instead. The status line says what the camera sees: nothing, a screen, 
 whole code that doesn't decode within 2 s (too close for the fixed-focus camera: move it further).
 Frames where corner squares were found but nothing decoded are tried again sharpened and
 contrast-stretched, with a few settings: the camera's pictures of a close code are soft and dim.
+Android's share screen draws the code's corner squares with rounded corners, which quirc can't
+group into a code; `src/quirc_ext.c` groups them by their centres instead and tries the grid sizes
+around the estimate.
 
 > **Status: first build, not yet tested on a console.** The parser, the profile writer and QR
 > decoding are tested on a PC (`scripts/test.sh`). What the Vita does is still to be checked, see
@@ -102,11 +105,10 @@ Things only a real Vita can answer. The log shows each of them:
       (full at 512 KB). Frames are real; decoding a 640×480 frame takes 35–45 ms.
 - [x] **A printed code decodes on the console** (2026-11-02, a router's label, first try with the
       picture preview) and the network is saved (slot 5, `wifi_security` 2).
-- [ ] **A code on a phone screen decodes.** It was in view and sharp in the preview but didn't
-      decode: the screen came out pure white (overexposed) and screens add moire. Now the exposure
-      steps down while the bright area is clipped, and a light blur is among the settings tried.
-      With `snapshots=1`, the first frame of each kind that didn't decode is saved as
-      `ux0:data/wifiqr/frame-<kind>.pgm`.
+- [ ] **A code on a phone screen decodes on the console.** Snapshots of 2026-11-02 were sharp but
+      quirc couldn't group Android's rounded corner squares (ZXing read them); with the centre-based
+      grouping they decode on a PC. With `snapshots=1`, the first frame of each kind that didn't
+      decode is saved as `ux0:data/wifiqr/frame-<kind>.pgm`.
 - [ ] **The registry write is enough.** The new network shows in Settings → Network → Wi-Fi Settings
       and works. (The first saved network wasn't connected to: the Vita was already on another.)
 - [ ] **The DNS lookup starts the connection.** `netctl state: connecting` should follow
@@ -124,7 +126,7 @@ scripts/build.sh   # -> build/wifiqr.suprx
 ```
 
 ```bash
-pip install qrcode==8.0   # for the QR decoding test
+pip install qrcode==8.0 pillow==11.0.0   # for the QR decoding test
 ```
 
 ```bash

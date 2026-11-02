@@ -6,6 +6,7 @@
 
 #include "quirc.h"
 #include "quirc_internal.h" // num_capstones: no public accessor
+#include "quirc_ext.h"
 
 struct qr_decoder {
     struct quirc *q;
@@ -131,6 +132,7 @@ void qr_decoder_free(qr_decoder *d) {
 // One pass of quirc over the image already in its buffer.
 static int decode_pass(qr_decoder *d, char *payload, int payload_size, qr_stats *st) {
     quirc_end(d->q);
+    quirc_group_by_centres(d->q); // rounded corner squares (Android's share screen)
     int n = quirc_count(d->q);
     if (n > st->codes) st->codes = n;
     if (d->q->num_capstones > st->capstones) {
@@ -145,8 +147,9 @@ static int decode_pass(qr_decoder *d, char *payload, int payload_size, qr_stats 
         struct quirc_data data;
         quirc_extract(d->q, i, &code);
         quirc_decode_error_t err = quirc_decode(&code, &data);
-        if (err == QUIRC_ERROR_DATA_ECC) {
-            // A mirrored image (e.g. a selfie-style camera) decodes after flipping.
+        if (err != QUIRC_SUCCESS) {
+            // A mirrored image (a selfie-style camera, or the centre-based grouping's corner
+            // order) decodes after flipping.
             quirc_flip(&code);
             err = quirc_decode(&code, &data);
         }

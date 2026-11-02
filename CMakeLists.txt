@@ -48,14 +48,14 @@ add_executable(wifiqr
   src/viewfinder.c
   src/wifi_qr.c
   ${TP}/quirc/lib/decode.c
-  ${TP}/quirc/lib/identify.c
+  src/quirc_ext.c  # includes quirc's identify.c
   ${TP}/quirc/lib/quirc.c
   ${TP}/quirc/lib/version_db.c
 )
 add_dependencies(wifiqr qmr_stubs wifiqr_kernel_stubs)
 target_include_directories(wifiqr PRIVATE src kernel ${TP}/quirc/lib ${QMR_INC})
 # quirc's own warnings are not ours to fix
-set_source_files_properties(${TP}/quirc/lib/decode.c ${TP}/quirc/lib/identify.c ${TP}/quirc/lib/quirc.c
+set_source_files_properties(${TP}/quirc/lib/decode.c src/quirc_ext.c ${TP}/quirc/lib/quirc.c
   ${TP}/quirc/lib/version_db.c PROPERTIES COMPILE_FLAGS "-w")
 
 target_link_directories(wifiqr PRIVATE ${QMR_STUBS} ${CMAKE_BINARY_DIR}/wifiqr_kernel_stubs)

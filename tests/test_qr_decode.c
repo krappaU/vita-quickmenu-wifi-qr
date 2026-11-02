@@ -35,7 +35,7 @@ int main(int argc, char **argv) {
         if (strcmp(argv[i + 1], "-") == 0) { // no code expected
             CHECK_INT(n, 0);
         } else {
-            CHECK_INT(seen, 1);
+            CHECK_TRUE(seen >= 1); // the corner-square fallback can propose several grid sizes
             CHECK_TRUE(st.capstones >= 3);
             CHECK_INT(n, (int)strlen(argv[i + 1]));
             CHECK_STR(n > 0 ? payload : "", argv[i + 1]);
