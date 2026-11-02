@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "quirc.h"
+#include "quirc_internal.h" // num_capstones: no public accessor
 
 struct qr_decoder {
     struct quirc *q;
@@ -31,14 +32,17 @@ void qr_decoder_free(qr_decoder *d) {
     free(d);
 }
 
-int qr_decode(qr_decoder *d, const uint8_t *luma, int pitch, char *payload, int payload_size, int *seen) {
+int qr_decode(qr_decoder *d, const uint8_t *luma, int pitch, char *payload, int payload_size, qr_stats *st) {
     int w, h;
     uint8_t *img = quirc_begin(d->q, &w, &h);
     for (int y = 0; y < h; y++) memcpy(img + y * w, luma + y * pitch, (size_t)w);
     quirc_end(d->q);
 
     int n = quirc_count(d->q);
-    if (seen) *seen = n;
+    if (st) {
+        st->codes = n;
+        st->capstones = d->q->num_capstones;
+    }
     for (int i = 0; i < n; i++) {
         struct quirc_code code;
         struct quirc_data data;

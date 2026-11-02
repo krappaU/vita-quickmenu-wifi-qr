@@ -111,27 +111,47 @@ static int camera_start(camera *cam, int prefer_640) {
     return last_err;
 }
 
-// Logs one frame's read result and brightness, to tell a real picture from an empty buffer
-// (still 0x55 everywhere: the camera never wrote) or a frozen one.
-static void frame_diag(const SceCameraRead *rd, const uint8_t *y, const uint8_t *base, int w, int h,
-                       unsigned decode_ms, int seen) {
-    unsigned min = 255, max = 0, sum = 0, n = 0, marker = 0;
+// Brightness of a frame, sampled: enough to tell a real picture from an empty buffer (still
+// 0x55 everywhere: the camera never wrote) and to spot a phone screen.
+typedef struct {
+    unsigned min, max, mean;
+    unsigned marker_pct;  // share of pixels still 0x55
+    unsigned bright_pct;  // share of pixels in the bright area (a lit screen), 0 if none
+} frame_stats;
+
+static frame_stats measure(const uint8_t *y, int w, int h) {
+    frame_stats f = {255, 0, 0, 0, 0};
+    unsigned sum = 0, n = 0, marker = 0;
     for (int i = 0; i < w * h; i += 97) {
         unsigned v = y[i];
-        if (v < min) min = v;
-        if (v > max) max = v;
+        if (v < f.min) f.min = v;
+        if (v > f.max) f.max = v;
         if (v == 0x55) marker++;
         sum += v, n++;
     }
-    log_printf("frame %u: status %d, ts %u ms, I %p (+%d), Y min %u max %u mean %u, 0x55 %u%%, decode %u ms, codes %d",
-               (unsigned)rd->frame, rd->status, (unsigned)(rd->timestamp / 1000), rd->pIBase,
-               (int)(y - base), min, max, sum / n, marker * 100 / n, decode_ms, seen);
+    f.mean = sum / n;
+    f.marker_pct = marker * 100 / n;
+    // A lit phone screen is the brightest thing in a room: pixels near the frame's maximum, when
+    // that maximum is clearly above the average (snapshots of 2026-11-02 peaked at 84-135 without one).
+    if (f.max >= 150 && f.max >= f.mean + 60) {
+        unsigned t = f.max - 50, bright = 0;
+        for (int i = 0; i < w * h; i += 97) bright += y[i] >= t;
+        f.bright_pct = bright * 100 / n;
+    }
+    return f;
 }
 
-// Saves the grayscale frame as ux0:data/wifiqr/frame-N.pgm, to see what the camera sees.
-static void save_pgm(int index, const uint8_t *y, int w, int h) {
+static scan_hint hint_for(const frame_stats *f, const qr_stats *q) {
+    if (q->codes > 0 || q->capstones >= 3) return SCAN_HINT_CODE;
+    if (q->capstones > 0) return SCAN_HINT_PARTIAL;
+    if (f->bright_pct >= 2) return SCAN_HINT_SCREEN;
+    return SCAN_HINT_NOTHING;
+}
+
+// Saves the grayscale frame as ux0:data/wifiqr/frame-<name>.pgm, to see what the camera saw.
+static void save_pgm(const char *name, const uint8_t *y, int w, int h) {
     char path[64], hdr[32];
-    sceClibSnprintf(path, sizeof path, WIFIQR_DIR "/frame-%d.pgm", index);
+    sceClibSnprintf(path, sizeof path, WIFIQR_DIR "/frame-%s.pgm", name);
     SceUID fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
     if (fd < 0) {
         log_printf("save %s: 0x%08x", path, fd);
@@ -160,8 +180,11 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
         goto out_stop;
     }
 
-    SceUInt64 start = sceKernelGetProcessTimeWide(), last_report = 0, last_diag = 0, next_snapshot = 2000;
-    int frames = 0, in_view = 0, snapshots = 0;
+    static const char *const hint_names[] = {"nothing", "screen", "partial", "code"};
+    SceUInt64 start = sceKernelGetProcessTimeWide(), last_report = 0, last_diag = 0;
+    int frames = 0, snapped = 0; // snapped: bit per hint whose first frame was saved
+    scan_hint best = SCAN_HINT_NOTHING; // the most promising hint since the last report
+    uint8_t *y = cam.y;
     for (;;) {
         if (p->cancel && *p->cancel) {
             result = SCAN_CANCELLED;
@@ -169,9 +192,12 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
         }
         SceUInt64 elapsed = (sceKernelGetProcessTimeWide() - start) / 1000;
         if (elapsed >= (SceUInt64)p->timeout_ms) break;
-        if (p->progress && (frames == 0 || elapsed - last_report >= 1000)) {
+        // Twice a second, so the hint follows the user's hand; the best of the period, so a
+        // code seen in one frame out of ten still shows.
+        if (p->progress && (frames == 0 || elapsed - last_report >= 500)) {
             last_report = elapsed;
-            p->progress((int)((p->timeout_ms - elapsed + 999) / 1000), in_view);
+            p->progress((int)((p->timeout_ms - elapsed + 999) / 1000), best);
+            best = SCAN_HINT_NOTHING;
         }
 
         SceCameraRead rd;
@@ -186,24 +212,29 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
             break;
         }
         // The read may say where this frame is (with several buffers it isn't always the start).
-        uint8_t *y = cam.y;
+        y = cam.y;
         if (rd.pIBase && (uint8_t *)rd.pIBase >= cam.y && (uint8_t *)rd.pIBase + ysize <= cam.y + cam.size)
             y = rd.pIBase;
         frames++;
         SceUInt64 t0 = sceKernelGetProcessTimeWide();
-        int seen = 0;
-        int n = qr_decode(dec, y, cam.w, payload, payload_size, &seen);
+        qr_stats q = {0, 0};
+        int n = qr_decode(dec, y, cam.w, payload, payload_size, &q);
         unsigned decode_ms = (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000);
-        in_view = seen > 0;
+        frame_stats f = measure(y, cam.w, cam.h);
+        scan_hint h = hint_for(&f, &q);
+        if (h > best) best = h;
 
-        // What the camera delivers: the first frames, then one a second, and snapshots to look at.
-        if (frames <= 3 || elapsed - last_diag >= 1000) {
+        if (frames <= 2 || elapsed - last_diag >= 1000 || (h > SCAN_HINT_NOTHING && !(snapped & (1 << h)))) {
             last_diag = elapsed;
-            frame_diag(&rd, y, cam.y, cam.w, cam.h, decode_ms, seen);
+            log_printf("frame %u at %u ms: Y min %u max %u mean %u, bright %u%%, 0x55 %u%%, corners %d, codes %d, "
+                       "decode %u ms -> %s",
+                       (unsigned)rd.frame, (unsigned)elapsed, f.min, f.max, f.mean, f.bright_pct, f.marker_pct,
+                       q.capstones, q.codes, decode_ms, hint_names[h]);
         }
-        if (snapshots < 3 && elapsed >= next_snapshot) {
-            save_pgm(++snapshots, y, cam.w, cam.h);
-            next_snapshot += 4000;
+        // The first frame of each kind, to see why it didn't decode.
+        if (h > SCAN_HINT_NOTHING && !(snapped & (1 << h)) && n == 0) {
+            snapped |= 1 << h;
+            save_pgm(hint_names[h], y, cam.w, cam.h);
         }
         if (n > 0) {
             result = SCAN_OK;
@@ -211,6 +242,7 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
         }
         sceKernelDelayThread(1000); // let the shell's own threads run between frames
     }
+    if (result != SCAN_OK && frames > 0) save_pgm("last", y, cam.w, cam.h);
     log_printf("scan: %d frames at %dx%d in %u ms, result %d", frames, cam.w, cam.h,
                (unsigned)((sceKernelGetProcessTimeWide() - start) / 1000), result);
 

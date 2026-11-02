@@ -13,9 +13,14 @@ typedef struct qr_decoder qr_decoder;
 qr_decoder *qr_decoder_new(int width, int height);
 void qr_decoder_free(qr_decoder *d);
 
+// What the decoder saw in a frame, for guiding the user (there is no camera preview).
+typedef struct {
+    int capstones; // QR corner squares found: 1-2 means part of a code is in view
+    int codes;     // codes found (all three corners), decoded or not
+} qr_stats;
+
 // luma: width*height bytes, one row every `pitch` bytes. Returns the payload length (0 if no
-// code was decoded); payload is zero-terminated. *seen is set to the number of codes found,
-// decoded or not, so the caller can tell "no code in view" from "code too blurry".
-int qr_decode(qr_decoder *d, const uint8_t *luma, int pitch, char *payload, int payload_size, int *seen);
+// code was decoded); payload is zero-terminated.
+int qr_decode(qr_decoder *d, const uint8_t *luma, int pitch, char *payload, int payload_size, qr_stats *st);
 
 #endif

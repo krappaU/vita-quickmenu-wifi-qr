@@ -28,12 +28,14 @@ int main(int argc, char **argv) {
         if (!img) continue;
         qr_decoder *d = qr_decoder_new(w, h);
         char payload[QR_PAYLOAD_MAX + 1];
-        int seen = 0;
-        int n = qr_decode(d, img, w, payload, sizeof payload, &seen);
+        qr_stats st = {0, 0};
+        int n = qr_decode(d, img, w, payload, sizeof payload, &st);
+        int seen = st.codes;
         if (strcmp(argv[i + 1], "-") == 0) { // no code expected
             CHECK_INT(n, 0);
         } else {
             CHECK_INT(seen, 1);
+            CHECK_TRUE(st.capstones >= 3);
             CHECK_INT(n, (int)strlen(argv[i + 1]));
             CHECK_STR(n > 0 ? payload : "", argv[i + 1]);
             wifi_cred c;

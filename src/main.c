@@ -105,9 +105,15 @@ static void backup_profiles(void) {
     done = 1;
 }
 
-static void on_scan_progress(int seconds_left, int code_in_view) {
-    if (code_in_view) set_status("QR code found, hold still... (%d s)", seconds_left);
-    else set_status("Point the back camera at the QR code (%d s)", seconds_left);
+static void on_scan_progress(int seconds_left, scan_hint hint) {
+    switch (hint) {
+    case SCAN_HINT_CODE: set_status("QR code in view, hold still... (%d s)", seconds_left); break;
+    case SCAN_HINT_PARTIAL: set_status("Part of the code in view: center it in the camera (%d s)", seconds_left); break;
+    case SCAN_HINT_SCREEN: set_status("Screen in view, looking for the code... (%d s)", seconds_left); break;
+    default:
+        set_status("Hold the phone against the camera, then pull it slowly away (%d s)", seconds_left);
+        break;
+    }
 }
 
 static int worker(SceSize args, void *argp) {
