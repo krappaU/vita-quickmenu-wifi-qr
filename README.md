@@ -8,10 +8,12 @@ The phone shows a QR code. On the Vita, hold the PS button and tap **Scan Wi-Fi 
 phone's screen against the back of the Vita over the camera, then pull it slowly away. iOS shares
 the same code format in its Wi-Fi settings.
 
-There is no picture preview: QuickMenuReborn loads each image only once until the menu closes, so a
-live picture would fill the shell's video memory. Instead, while scanning, a text viewfinder shows
-the camera's view about 3 times a second as 24×12 full-width characters (light, `・`, `■`), with
-`◎` where a QR corner square was found, and the status line says what the camera sees: nothing, a screen, part of a code (one or two of its corner squares), a whole code, or a
+While scanning, a 320×240 camera preview appears at the top right of the screen, with red boxes
+on the QR corner squares found. QuickMenuReborn can't show a changing picture (it loads each image
+once per menu opening and keeps it until the menu closes), so a small kernel plugin,
+`wifiqr_kernel.skprx`, draws it into SceShell's frames as they're shown, the way PSVshell draws its
+overlay. Without it, a text viewfinder (24×12 full-width characters with `◎` on corner squares)
+is shown instead. The status line says what the camera sees: nothing, a screen, part of a code (one or two of its corner squares), a whole code, or a
 whole code that doesn't decode within 2 s (too close for the fixed-focus camera: move it further).
 Frames where corner squares were found but nothing decoded are tried again sharpened and
 contrast-stretched, with a few settings: the camera's pictures of a close code are soft and dim.
@@ -56,7 +58,15 @@ contrast-stretched, with a few settings: the camera's pictures of a close code a
    `*main` in your taiHEN config, plus the `ur0:QuickMenuReborn/` folder with `qmr_plugin.rco`).
 2. Copy `wifiqr.suprx` into `ur0:QuickMenuReborn/` (`ux0:` if that's where your QuickMenuReborn
    folder is). Don't add it to `config.txt`: QuickMenuReborn loads it.
-3. Reboot.
+3. For the camera preview: copy `wifiqr_kernel.skprx` to `ur0:tai/` and add it under `*KERNEL` in
+   `ur0:tai/config.txt`:
+   ```
+   *KERNEL
+   ur0:tai/wifiqr_kernel.skprx
+   ```
+   It hooks `ksceDisplaySetFrameBufInternal` with the NIDs PSVshell uses, known for firmware 3.60
+   and 3.65. If the hook fails, the log says so and the text viewfinder is used.
+4. Reboot.
 
 ## Settings
 

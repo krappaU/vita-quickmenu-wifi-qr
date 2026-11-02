@@ -52,16 +52,17 @@ add_executable(wifiqr
   ${TP}/quirc/lib/quirc.c
   ${TP}/quirc/lib/version_db.c
 )
-add_dependencies(wifiqr qmr_stubs)
-target_include_directories(wifiqr PRIVATE src ${TP}/quirc/lib ${QMR_INC})
+add_dependencies(wifiqr qmr_stubs wifiqr_kernel_stubs)
+target_include_directories(wifiqr PRIVATE src kernel ${TP}/quirc/lib ${QMR_INC})
 # quirc's own warnings are not ours to fix
 set_source_files_properties(${TP}/quirc/lib/decode.c ${TP}/quirc/lib/identify.c ${TP}/quirc/lib/quirc.c
   ${TP}/quirc/lib/version_db.c PROPERTIES COMPILE_FLAGS "-w")
 
-target_link_directories(wifiqr PRIVATE ${QMR_STUBS})
+target_link_directories(wifiqr PRIVATE ${QMR_STUBS} ${CMAKE_BINARY_DIR}/wifiqr_kernel_stubs)
 target_link_options(wifiqr PRIVATE -nostdlib)
 target_link_libraries(wifiqr
   QuickMenuReborn_stub
+  WifiQrKernel_stub_weak  # optional: without the kernel plugin, its calls just fail
   SceCamera_stub
   SceIofilemgr_stub
   SceKernelThreadMgr_stub
@@ -75,3 +76,18 @@ target_link_libraries(wifiqr
 )
 
 vita_create_self(wifiqr.suprx wifiqr CONFIG ${CMAKE_SOURCE_DIR}/exports.yml UNSAFE)
+
+# Kernel helper: draws the camera preview over SceShell's frames (see kernel/main.c).
+add_executable(wifiqr_kernel kernel/main.c)
+target_link_options(wifiqr_kernel PRIVATE -nostdlib)
+target_link_libraries(wifiqr_kernel
+  taihenForKernel_stub
+  SceDisplayForDriver_stub
+  SceSysclibForDriver_stub
+  SceSysmemForDriver_stub
+  SceThreadmgrForDriver_stub
+  SceDebugForDriver_stub
+  gcc
+)
+vita_create_self(wifiqr_kernel.skprx wifiqr_kernel CONFIG ${CMAKE_SOURCE_DIR}/kernel/exports.yml UNSAFE)
+vita_create_stubs(wifiqr_kernel_stubs wifiqr_kernel ${CMAKE_SOURCE_DIR}/kernel/exports.yml KERNEL)

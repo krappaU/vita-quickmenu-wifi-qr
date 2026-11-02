@@ -14,6 +14,7 @@
 #include "profiles.h"
 #include "scan.h"
 #include "viewfinder.h"
+#include "wifiqr_kernel.h"
 #include "wifi_qr.h"
 
 #define SEPARATOR_ID "wifiqr_separator"
@@ -112,8 +113,39 @@ static void backup_profiles(void) {
     done = 1;
 }
 
-// The text viewfinder (see viewfinder.h): what the back camera sees, ~3 times a second.
+// The picture preview, drawn over the Quick Menu by the kernel helper (wifiqr_kernel.skprx).
+// 1 untried, 2 working, 0 unavailable (not installed, or its display hook failed).
+static int kpreview = 1;
+
+static void on_preview(const uint8_t *luma, int w, int h, const int *cx, const int *cy, int corners) {
+    static uint8_t small[PREVIEW_W * PREVIEW_H];
+    if (!kpreview) return;
+    // Box-average down to the preview size (2x2 from 640x480; 1:1 from 320x240).
+    const int sx = w / PREVIEW_W, sy = h / PREVIEW_H;
+    if (sx < 1 || sy < 1) return;
+    for (int y = 0; y < PREVIEW_H; y++)
+        for (int x = 0; x < PREVIEW_W; x++) {
+            unsigned sum = 0;
+            for (int j = 0; j < sy; j++)
+                for (int i = 0; i < sx; i++) sum += luma[(y * sy + j) * w + x * sx + i];
+            small[y * PREVIEW_W + x] = (uint8_t)(sum / (unsigned)(sx * sy));
+        }
+    int c[8];
+    for (int i = 0; i < corners && i < 4; i++) c[2 * i] = cx[i] / sx, c[2 * i + 1] = cy[i] / sy;
+    int rc = wifiqrPreviewSet(small, PREVIEW_W, PREVIEW_H, c, corners);
+    if (rc < 0) {
+        log_printf("picture preview unavailable (0x%08x): using the text viewfinder", (unsigned)rc);
+        kpreview = 0;
+    } else if (kpreview == 1) {
+        log_printf("picture preview: on");
+        kpreview = 2;
+    }
+}
+
+// The text viewfinder (see viewfinder.h): what the back camera sees, ~3 times a second. Only
+// when the picture preview isn't working.
 static void on_viewfinder(const uint8_t *luma, int w, int h, const int *cx, const int *cy, int corners) {
+    if (kpreview == 2) return;
     viewfinder_render(luma, w, h, w, cx, cy, corners, view_text, sizeof view_text);
     show(VIEW_ID, view_text);
 }
@@ -154,9 +186,11 @@ static int worker(SceSize args, void *argp) {
         .progress = on_scan_progress,
         .snapshots = cfg.snapshots,
         .viewfinder = cfg.viewfinder ? on_viewfinder : NULL,
+        .preview = cfg.viewfinder ? on_preview : NULL,
     };
     int cam_err = 0;
     scan_result sr = scan_qr(&sp, payload, sizeof payload, &cam_err);
+    if (kpreview == 2) wifiqrPreviewOff();
     view_clear();
     switch (sr) {
     case SCAN_OK: break;

@@ -232,6 +232,10 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
             code_since = 0;
         }
         if (h > best) best = h;
+        if (p->preview) {
+            int nc = q.capstones < 4 ? q.capstones : 4;
+            p->preview(fr, cam.w, cam.h, q.corner_x, q.corner_y, nc);
+        }
         if (p->viewfinder && (frames == 1 || elapsed - last_view >= 300)) {
             last_view = elapsed;
             int nc = q.capstones < 4 ? q.capstones : 4;

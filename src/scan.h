@@ -30,6 +30,8 @@ typedef struct {
     // Called about 3 times a second with the current frame and where corner squares are, for
     // the text viewfinder. NULL: none.
     void (*viewfinder)(const uint8_t *luma, int w, int h, const int *corners_x, const int *corners_y, int corners);
+    // Called with every frame, for the picture preview drawn by the kernel helper. NULL: none.
+    void (*preview)(const uint8_t *luma, int w, int h, const int *corners_x, const int *corners_y, int corners);
     // Called twice a second with the most promising hint since the last call.
     void (*progress)(int seconds_left, scan_hint hint);
 } scan_params;
