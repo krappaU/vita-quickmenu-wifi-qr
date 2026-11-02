@@ -57,6 +57,7 @@ wifi_qr_result wifi_qr_parse(const char *text, size_t len, wifi_cred *out) {
 
     const char *p = text + 5, *end = text + len;
     char type[32] = "", val[128];
+    int transition_disable = 0;
     int have_ssid = 0, have_type = 0;
     size_t pass_len = 0;
 
@@ -96,6 +97,9 @@ wifi_qr_result wifi_qr_parse(const char *text, size_t len, wifi_cred *out) {
         case 'h':
             out->hidden = ieq(val, "true");
             break;
+        case 'r': // WPA3 "transition disable" bits; bit 0 is WPA3-Personal
+            transition_disable = n > 0 && (val[n - 1] == '1' || val[n - 1] == '3');
+            break;
         default:
             break; // R: (transition disable), K:, E:, A:, I:... are ignored
         }
@@ -114,15 +118,19 @@ wifi_qr_result wifi_qr_parse(const char *text, size_t len, wifi_cred *out) {
         if (pass_len == 10 || pass_len == 26) return is_hex(out->password, pass_len) ? WIFI_QR_OK : WIFI_QR_BAD_PASSWORD;
         return WIFI_QR_BAD_PASSWORD;
     }
-    if (ieq(type, "WPA") || ieq(type, "WPA2") || ieq(type, "WPA/WPA2") || ieq(type, "WPA2/WPA3") ||
-        ieq(type, "WPA-PSK") || ieq(type, "WPA2-PSK")) {
-        // WPA2/WPA3 transition networks still accept WPA2, which the Vita can use.
+    int sae = ieq(type, "SAE") || ieq(type, "WPA3") || ieq(type, "WPA2/WPA3") || ieq(type, "WPA3-SAE");
+    if (sae || ieq(type, "WPA") || ieq(type, "WPA2") || ieq(type, "WPA/WPA2") || ieq(type, "WPA-PSK") ||
+        ieq(type, "WPA2-PSK")) {
+        // T:SAE can't tell WPA3-only from a WPA2/WPA3 transition network: Android writes it for
+        // both (a transition router and a "WPA2/WPA3" hotspot, 2026-11-02). The password is the
+        // same, so try WPA2; a WPA3-only network then just fails to connect.
         out->sec = WIFI_SEC_WPA;
+        out->wpa3 = sae;
+        out->wpa3_only = sae && transition_disable;
         if (pass_len >= 8 && pass_len <= 63) return is_printable_ascii(out->password, pass_len) ? WIFI_QR_OK : WIFI_QR_BAD_PASSWORD;
         if (pass_len == 64) return is_hex(out->password, pass_len) ? WIFI_QR_OK : WIFI_QR_BAD_PASSWORD;
         return WIFI_QR_BAD_PASSWORD;
     }
-    if (ieq(type, "SAE") || ieq(type, "WPA3")) return WIFI_QR_WPA3;
     if (ieq(type, "WPA2-EAP") || ieq(type, "EAP") || ieq(type, "WPA-EAP") || ieq(type, "WPA3-EAP"))
         return WIFI_QR_ENTERPRISE;
     return WIFI_QR_UNKNOWN_SEC;
@@ -136,7 +144,6 @@ const char *wifi_qr_result_str(wifi_qr_result r) {
     case WIFI_QR_NO_SSID: return "QR code has no network name";
     case WIFI_QR_SSID_TOO_LONG: return "Network name is too long";
     case WIFI_QR_BAD_PASSWORD: return "Password is not valid for this network type";
-    case WIFI_QR_WPA3: return "WPA3-only network: the Vita can't join it";
     case WIFI_QR_ENTERPRISE: return "Enterprise (802.1X) network: the Vita can't join it";
     case WIFI_QR_UNKNOWN_SEC: return "Unknown security type";
     }

@@ -218,7 +218,8 @@ static int worker(SceSize args, void *argp) {
         set_status("%s", wifi_qr_result_str(pr));
         goto done;
     }
-    log_printf("QR: \"%s\", %s, password %d chars%s", c.ssid, wifi_sec_str(c.sec),
+    log_printf("QR: \"%s\", %s%s, password %d chars%s", c.ssid, wifi_sec_str(c.sec),
+               c.wpa3_only ? " (code says WPA3 only)" : c.wpa3 ? " (code says WPA3: trying WPA2)" : "",
                (int)sceClibStrnlen(c.password, sizeof c.password), c.hidden ? ", hidden" : "");
 
     set_status("Saving %s...", c.ssid);
@@ -240,7 +241,10 @@ static int worker(SceSize args, void *argp) {
     switch (cr) {
     case CONNECT_TARGET: set_status("Connected to %s", c.ssid); break;
     case CONNECT_OTHER: set_status("Saved %s, but connected to %s", c.ssid, now); break;
-    case CONNECT_NONE: set_status("Saved %s, not connected yet (out of range?)", c.ssid); break;
+    case CONNECT_NONE:
+        if (c.wpa3) set_status("Saved %s, not connected: it may be WPA3-only (the Vita needs WPA2)", c.ssid);
+        else set_status("Saved %s, not connected yet (out of range?)", c.ssid);
+        break;
     }
 
 done:

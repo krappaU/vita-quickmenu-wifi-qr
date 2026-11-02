@@ -34,9 +34,10 @@ around the estimate.
    them with [quirc](https://github.com/dlbeer/quirc) until it finds a code, for up to 30 seconds.
    The camera needs physically contiguous memory, which is scarce in SceShell, so the plugin tries
    each kind that can provide it and logs the results.
-3. **Parse.** It reads the `WIFI:T:WPA;S:<name>;P:<password>;;` text. Networks the Vita can't join
-   are rejected with a message: WPA3-only (SAE) and enterprise (802.1X). 5 GHz-only networks can't
-   be detected from the code.
+3. **Parse.** It reads the `WIFI:T:WPA;S:<name>;P:<password>;;` text. Enterprise (802.1X) networks
+   are rejected with a message. `T:SAE` (WPA3) is saved as WPA2 and tried: Android writes it for
+   WPA2/WPA3 transition networks too, whose password works over WPA2; if the connection fails the
+   status says the network may be WPA3-only. 5 GHz-only networks can't be detected from the code.
 4. **Save.** Saved networks live in the registry, in 30 slots `/CONFIG/NET/01` to `/CONFIG/NET/30`
    (layout from [Vita Account Manager](https://github.com/windsurfer1122/Vita-Account-Manager) and
    [Registry Editor MOD](https://github.com/devnoname120/RegistryEditorMOD)).

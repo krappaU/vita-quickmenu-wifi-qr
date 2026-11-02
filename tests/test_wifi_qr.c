@@ -63,8 +63,20 @@ int main(void) {
     CHECK_INT(parse("WIFI:S:old;T:WEP;P:abcdef;;", &c), WIFI_QR_BAD_PASSWORD);
     CHECK_INT(parse("WIFI:S:old;T:WEP;P:012345678g;;", &c), WIFI_QR_BAD_PASSWORD);
 
+    // WPA3 (SAE): Android writes it for WPA2/WPA3 transition networks too, so it's tried as WPA
+    CHECK_INT(parse("WIFI:S:A_SUS_NETWORK;T:SAE;P:abcdefgh;H:false;;", &c), WIFI_QR_OK);
+    CHECK_INT(c.sec, WIFI_SEC_WPA);
+    CHECK_INT(c.wpa3, 1);
+    CHECK_INT(c.wpa3_only, 0);
+    CHECK_STR(c.password, "abcdefgh");
+    CHECK_INT(parse("WIFI:S:new;T:SAE;R:1;P:abcdefgh;;", &c), WIFI_QR_OK); // transition disable
+    CHECK_INT(c.wpa3_only, 1);
+    CHECK_INT(parse("WIFI:S:new;T:WPA;R:1;P:abcdefgh;;", &c), WIFI_QR_OK); // R without SAE: ignored
+    CHECK_INT(c.wpa3, 0);
+    CHECK_INT(c.wpa3_only, 0);
+    CHECK_INT(parse("WIFI:S:new;T:SAE;P:1234567;;", &c), WIFI_QR_BAD_PASSWORD);
+
     // Networks the Vita can't join
-    CHECK_INT(parse("WIFI:S:new;T:SAE;P:abcdefgh;;", &c), WIFI_QR_WPA3);
     CHECK_INT(parse("WIFI:S:work;T:WPA2-EAP;E:PEAP;I:me;P:abcdefgh;;", &c), WIFI_QR_ENTERPRISE);
     CHECK_INT(parse("WIFI:S:x;T:FOO;P:abcdefgh;;", &c), WIFI_QR_UNKNOWN_SEC);
 

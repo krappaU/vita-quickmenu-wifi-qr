@@ -20,6 +20,10 @@ typedef struct {
     char password[WIFI_PASS_MAX + 1];
     wifi_sec sec;
     int hidden;
+    // The code said WPA3 (T:SAE). Android writes that for WPA2/WPA3 transition networks too, whose
+    // password works over WPA2, so it's saved as WPA; this only explains a failed connection.
+    int wpa3;
+    int wpa3_only; // R:1, "transition disable": the network asks clients not to fall back to WPA2
 } wifi_cred;
 
 typedef enum {
@@ -29,7 +33,6 @@ typedef enum {
     WIFI_QR_NO_SSID,
     WIFI_QR_SSID_TOO_LONG,
     WIFI_QR_BAD_PASSWORD,    // wrong length or characters for its security type
-    WIFI_QR_WPA3,            // SAE / WPA3-only: the Vita cannot join it
     WIFI_QR_ENTERPRISE,      // 802.1X (EAP): the Vita cannot join it
     WIFI_QR_UNKNOWN_SEC,
 } wifi_qr_result;
