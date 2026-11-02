@@ -27,6 +27,16 @@ add_custom_command(
   DEPENDS ${TP}/QuickMenuReborn/QuickMenuReborn.yml)
 add_custom_target(qmr_stubs DEPENDS ${QMR_STUBS}/libQuickMenuReborn_stub.a)
 
+# Functions SceShell exports to its plugins (stubs/SceShell.yml), linked weakly.
+set(SHELL_STUBS ${CMAKE_BINARY_DIR}/shell_stubs)
+add_custom_command(
+  OUTPUT ${SHELL_STUBS}/libSceShell_stub_weak.a
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${SHELL_STUBS}
+  COMMAND vita-libs-gen ${CMAKE_SOURCE_DIR}/stubs/SceShell.yml ${SHELL_STUBS}
+  COMMAND make -C ${SHELL_STUBS} -s
+  DEPENDS ${CMAKE_SOURCE_DIR}/stubs/SceShell.yml)
+add_custom_target(shell_stubs DEPENDS ${SHELL_STUBS}/libSceShell_stub_weak.a)
+
 # The header is included as <quickmenureborn/qm_reborn.h>.
 set(QMR_INC ${CMAKE_BINARY_DIR}/qmr_include)
 file(MAKE_DIRECTORY ${QMR_INC})
@@ -52,17 +62,18 @@ add_executable(wifiqr
   ${TP}/quirc/lib/quirc.c
   ${TP}/quirc/lib/version_db.c
 )
-add_dependencies(wifiqr qmr_stubs wifiqr_kernel_stubs)
+add_dependencies(wifiqr qmr_stubs shell_stubs wifiqr_kernel_stubs)
 target_include_directories(wifiqr PRIVATE src kernel ${TP}/quirc/lib ${QMR_INC})
 # quirc's own warnings are not ours to fix
 set_source_files_properties(${TP}/quirc/lib/decode.c src/quirc_ext.c ${TP}/quirc/lib/quirc.c
   ${TP}/quirc/lib/version_db.c PROPERTIES COMPILE_FLAGS "-w")
 
-target_link_directories(wifiqr PRIVATE ${QMR_STUBS} ${CMAKE_BINARY_DIR}/wifiqr_kernel_stubs)
+target_link_directories(wifiqr PRIVATE ${QMR_STUBS} ${SHELL_STUBS} ${CMAKE_BINARY_DIR}/wifiqr_kernel_stubs)
 target_link_options(wifiqr PRIVATE -nostdlib)
 target_link_libraries(wifiqr
   QuickMenuReborn_stub
   WifiQrKernel_stub_weak  # optional: without the kernel plugin, its calls just fail
+  SceShell_stub_weak
   SceCamera_stub
   SceIofilemgr_stub
   SceKernelThreadMgr_stub

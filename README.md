@@ -51,6 +51,11 @@ around the estimate.
      needs one WEP network already saved through Settings.
    - Before the first change in each session, every saved network is copied to
      `ux0:data/wifiqr/backup-<date>.txt`.
+   - The shell keeps its own copy of the saved networks, read at boot, so a profile written only
+     to the registry shows in Settings but doesn't connect until a reboot. The plugin then does
+     what the system's Wi-Fi Settings popup does after writing the registry (found in its 3.65
+     code): it hands the profile to `SceShell_60129092` as a 0x478-byte structure laid out like
+     the registry keys (see `src/profiles.h`).
 5. **Connect.** The Vita connects on demand: when an app uses the network, it joins a saved network
    that's in range, preferring the stronger signal. So the plugin does a DNS lookup, then if nothing
    happens after 5 s a TCP connection, and waits for the connection. If the Vita is already
@@ -110,8 +115,10 @@ Things only a real Vita can answer. The log shows each of them:
       quirc couldn't group Android's rounded corner squares (ZXing read them); with the centre-based
       grouping they decode on a PC. With `snapshots=1`, the first frame of each kind that didn't
       decode is saved as `ux0:data/wifiqr/frame-<kind>.pgm`.
-- [ ] **The registry write is enough.** The new network shows in Settings → Network → Wi-Fi Settings
-      and works. (The first saved network wasn't connected to: the Vita was already on another.)
+- [x] **A saved profile is correct:** it shows in Settings and connects after a reboot (2026-11-02).
+- [ ] **It connects without a reboot** now that the shell's copy is updated too.
+- [ ] **Scanning in games:** the camera delivers no frames to SceShell while a game is in the
+      foreground (2026-11-02: the buffer stayed untouched). Works in LiveArea.
 - [ ] **The DNS lookup starts the connection.** `netctl state: connecting` should follow
       `trigger: DNS lookup`. If it only follows `trigger: TCP connect`, swap their order.
 - [ ] **Live label updates don't crash the shell** (`live_labels`).

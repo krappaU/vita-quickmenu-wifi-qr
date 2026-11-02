@@ -1,0 +1,11 @@
+# Functions SceShell (the shell's main module) exports to its plugins; NIDs from the 3.65
+# impose_net_plugin's imports and wiki.henkaku.xyz/vita/SceShell. Linked weakly.
+modules:
+  SceShell:
+    nid: 0x00000000
+    libraries:
+      SceShell:
+        kernel: false
+        nid: 0x2404AE25
+        functions:
+          SceShell_60129092: 0x60129092

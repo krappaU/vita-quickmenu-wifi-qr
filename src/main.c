@@ -15,6 +15,10 @@
 #include "scan.h"
 #include "viewfinder.h"
 #include "wifiqr_kernel.h"
+
+// Exported by SceShell to its plugins (stubs/SceShell.yml): hands saved profiles to the shell's
+// cached copy of the networks. See profiles_shell_entry.
+int SceShell_60129092(void *profiles, unsigned int count);
 #include "wifi_qr.h"
 
 #define SEPARATOR_ID "wifiqr_separator"
@@ -232,6 +236,15 @@ static int worker(SceSize args, void *argp) {
         else if (po.result == PROFILES_ERR_NO_EXAMPLE) set_status("%s (%s)", profiles_result_str(po.result), wifi_sec_str(c.sec));
         else set_status("%s", profiles_result_str(po.result));
         goto done;
+    }
+
+    // Update the shell's cached copy of the networks, as the Wi-Fi Settings popup does after
+    // writing the registry: without it the new profile only works after a reboot (2026-11-02).
+    {
+        static unsigned char entry[SHELL_PROFILE_SIZE];
+        profiles_shell_entry(entry, po.slot, &c, po.security_value);
+        int rc = SceShell_60129092(entry, 1);
+        log_printf("shell profile update (slot %d): 0x%08x", po.slot, (unsigned)rc);
     }
 
     set_status("%s %s. Connecting...", c.ssid, profiles_result_str(po.result));

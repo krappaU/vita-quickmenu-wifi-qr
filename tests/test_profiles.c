@@ -199,6 +199,37 @@ int main(void) {
     profiles_dump(append, out, 0);
     CHECK_TRUE(strstr(out, "/CONFIG/NET/01/WIFI/wpa_key=homepass1\n") != NULL);
 
+    // The structure handed to the shell (see profiles.h)
+    {
+        unsigned char e[SHELL_PROFILE_SIZE];
+        memset(e, 0xAA, sizeof e);
+        c = cred("Hotel Guest", WIFI_SEC_WPA, "welcome123");
+        profiles_shell_entry(e, 5, &c, 2);
+        CHECK_INT(e[0x000] | e[0x001] << 8, 5);
+        CHECK_INT(e[0x004], 1);
+        CHECK_INT(e[0x008], 0);
+        CHECK_STR((char *)e + 0x00C, "Hotel Guest");
+        CHECK_INT(e[0x054], 1);
+        CHECK_STR((char *)e + 0x060, "Hotel Guest");
+        CHECK_INT(e[0x084], 2);
+        CHECK_STR((char *)e + 0x088, "");
+        CHECK_STR((char *)e + 0x0A4, "welcome123");
+        CHECK_INT(e[0x0E8], 0);
+        int nonzero = 0;
+        for (int i = 0x0E8; i < SHELL_PROFILE_SIZE; i++) nonzero += e[i] != 0;
+        CHECK_INT(nonzero, 0);
+        c = cred("Attic", WIFI_SEC_WEP, "0123456789");
+        profiles_shell_entry(e, 30, &c, 1);
+        CHECK_INT(e[0], 30);
+        CHECK_STR((char *)e + 0x088, "0123456789");
+        CHECK_STR((char *)e + 0x0A4, "");
+        // a 32-byte SSID fills ssid[33] with its terminator
+        c = cred("123456789012345678901234567890AB", WIFI_SEC_OPEN, "");
+        profiles_shell_entry(e, 1, &c, 0);
+        CHECK_STR((char *)e + 0x060, "123456789012345678901234567890AB");
+        CHECK_INT(e[0x060 + 32], 0);
+    }
+
     return CHECK_DONE("profiles");
 }
 

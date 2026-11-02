@@ -37,4 +37,17 @@ void profiles_dump(profiles_line_fn fn, void *ud, int mask_secrets);
 
 const char *profiles_result_str(profiles_result r);
 
+// The shell keeps its own copy of the saved networks, read at boot: a profile written only to the
+// registry shows in Settings but connects with the stale copy until a reboot (2026-11-02). The
+// system's Wi-Fi Settings popup (impose_net_plugin, function at 0x81005574 of its 3.65 build)
+// writes the registry, sets conf_flag, then hands the profile to SceShell_60129092(entries, 1) as
+// this structure, laid out like the registry keys (offsets from its stores and copy sizes):
+#define SHELL_PROFILE_SIZE 0x478
+//   +0x000 slot (1-based)      +0x004 conf_flag (1)    +0x008 conf_type (0)
+//   +0x00C conf_name[65]       +0x050 conf_serial_no   +0x054 enable_auto_connect (1)
+//   +0x058 mtu                 +0x060 ssid[33]         +0x084 wifi_security
+//   +0x088 wep_key[27]         +0x0A4 wpa_key[65]      +0x0E8 ip_config (0)   +0x31C dns_flag
+// Everything else zero, as the popup leaves it.
+void profiles_shell_entry(unsigned char out[SHELL_PROFILE_SIZE], int slot, const wifi_cred *c, int security);
+
 #endif

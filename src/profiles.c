@@ -196,3 +196,26 @@ const char *profiles_result_str(profiles_result r) {
     }
     return "?";
 }
+
+static void put32(unsigned char *p, unsigned v) {
+    p[0] = (unsigned char)v, p[1] = (unsigned char)(v >> 8), p[2] = (unsigned char)(v >> 16), p[3] = (unsigned char)(v >> 24);
+}
+
+static void put_str(unsigned char *p, const char *s, int size) {
+    int n = (int)strlen(s);
+    if (n > size - 1) n = size - 1;
+    memcpy(p, s, (size_t)n); // the rest is already zero
+}
+
+void profiles_shell_entry(unsigned char out[SHELL_PROFILE_SIZE], int slot, const wifi_cred *c, int security) {
+    memset(out, 0, SHELL_PROFILE_SIZE);
+    put32(out + 0x000, (unsigned)slot);
+    put32(out + 0x004, 1); // conf_flag
+    put32(out + 0x008, 0); // conf_type
+    put_str(out + 0x00C, c->ssid, 65);   // conf_name
+    put32(out + 0x054, 1); // enable_auto_connect
+    put_str(out + 0x060, c->ssid, 33);
+    put32(out + 0x084, (unsigned)security);
+    if (c->sec == WIFI_SEC_WEP) put_str(out + 0x088, c->password, 27);
+    else if (c->sec == WIFI_SEC_WPA) put_str(out + 0x0A4, c->password, 65);
+}
