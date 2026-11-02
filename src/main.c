@@ -20,6 +20,10 @@
 #define BUTTON_ID "wifiqr_button"
 #define STATUS_ID "wifiqr_status"
 
+// The process's default user priority. Offsets from it are only allowed in a small range:
+// 0x10000100 + 0x40 failed with SCE_KERNEL_ERROR_ILLEGAL_PRIORITY (0x80028023) on 2026-11-02.
+#define WORKER_PRIORITY 0x10000100
+
 #define BUTTON_SCAN "Scan Wi-Fi QR"
 #define BUTTON_CANCEL "Cancel"
 
@@ -183,7 +187,7 @@ BUTTON_HANDLER(on_button) {
         return;
     }
     load_config();
-    SceUID th = sceKernelCreateThread("wifiqr_worker", worker, 0x10000100 + 0x40, 0x10000, 0, 0, NULL);
+    SceUID th = sceKernelCreateThread("wifiqr_worker", worker, WORKER_PRIORITY, 0x10000, 0, 0, NULL);
     if (th < 0) {
         set_status("Couldn't start (0x%08X)", (unsigned)th);
         return;
