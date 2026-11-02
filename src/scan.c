@@ -2,6 +2,7 @@
 #include "scan.h"
 
 #include <psp2/camera.h>
+#include <psp2/io/fcntl.h>
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/sysmem.h>
@@ -35,6 +36,7 @@ static const mem_kind KINDS[] = {
 typedef struct {
     SceUID uid;
     uint8_t *y;   // the Y plane: the grayscale image
+    size_t size;  // of the memory block
     int w, h;
 } camera;
 
@@ -71,6 +73,7 @@ static int camera_start(camera *cam, int prefer_640) {
             void *base = NULL;
             sceKernelGetMemBlockBase(uid, &base);
             uint8_t *y = base;
+            sceClibMemset(y, 0x55, ysize); // a marker: shows in the log if the camera never writes
 
             SceCameraInfo info;
             sceClibMemset(&info, 0, sizeof info);
@@ -90,8 +93,10 @@ static int camera_start(camera *cam, int prefer_640) {
             if (rc >= 0) {
                 rc = sceCameraStart(SCE_CAMERA_DEVICE_BACK);
                 if (rc >= 0) {
-                    log_printf("camera %dx%d %s %u KB: started", w, h, mk->name, (unsigned)(sz / 1024));
-                    cam->uid = uid, cam->y = y, cam->w = w, cam->h = h;
+                    log_printf("camera %dx%d %s %u KB: started (info: %ux%u pitch %u buffer %u, I %p U %p V %p)", w, h,
+                               mk->name, (unsigned)(sz / 1024), info.width, info.height, info.pitch, info.buffer,
+                               info.pIBase, info.pUBase, info.pVBase);
+                    cam->uid = uid, cam->y = y, cam->size = sz, cam->w = w, cam->h = h;
                     return 0;
                 }
                 log_printf("camera %dx%d %s %u KB: sceCameraStart 0x%08x", w, h, mk->name, (unsigned)(sz / 1024), rc);
@@ -104,6 +109,39 @@ static int camera_start(camera *cam, int prefer_640) {
         }
     }
     return last_err;
+}
+
+// Logs one frame's read result and brightness, to tell a real picture from an empty buffer
+// (still 0x55 everywhere: the camera never wrote) or a frozen one.
+static void frame_diag(const SceCameraRead *rd, const uint8_t *y, const uint8_t *base, int w, int h,
+                       unsigned decode_ms, int seen) {
+    unsigned min = 255, max = 0, sum = 0, n = 0, marker = 0;
+    for (int i = 0; i < w * h; i += 97) {
+        unsigned v = y[i];
+        if (v < min) min = v;
+        if (v > max) max = v;
+        if (v == 0x55) marker++;
+        sum += v, n++;
+    }
+    log_printf("frame %u: status %d, ts %u ms, I %p (+%d), Y min %u max %u mean %u, 0x55 %u%%, decode %u ms, codes %d",
+               (unsigned)rd->frame, rd->status, (unsigned)(rd->timestamp / 1000), rd->pIBase,
+               (int)(y - base), min, max, sum / n, marker * 100 / n, decode_ms, seen);
+}
+
+// Saves the grayscale frame as ux0:data/wifiqr/frame-N.pgm, to see what the camera sees.
+static void save_pgm(int index, const uint8_t *y, int w, int h) {
+    char path[64], hdr[32];
+    sceClibSnprintf(path, sizeof path, WIFIQR_DIR "/frame-%d.pgm", index);
+    SceUID fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+    if (fd < 0) {
+        log_printf("save %s: 0x%08x", path, fd);
+        return;
+    }
+    int n = sceClibSnprintf(hdr, sizeof hdr, "P5 %d %d 255\n", w, h);
+    sceIoWrite(fd, hdr, n);
+    sceIoWrite(fd, y, (SceSize)w * h);
+    sceIoClose(fd);
+    log_printf("saved %s", path);
 }
 
 scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *camera_error) {
@@ -122,8 +160,8 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
         goto out_stop;
     }
 
-    SceUInt64 start = sceKernelGetProcessTimeWide(), last_report = 0;
-    int frames = 0, in_view = 0;
+    SceUInt64 start = sceKernelGetProcessTimeWide(), last_report = 0, last_diag = 0, next_snapshot = 2000;
+    int frames = 0, in_view = 0, snapshots = 0;
     for (;;) {
         if (p->cancel && *p->cancel) {
             result = SCAN_CANCELLED;
@@ -147,10 +185,26 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
             result = SCAN_CAMERA_ERROR;
             break;
         }
+        // The read may say where this frame is (with several buffers it isn't always the start).
+        uint8_t *y = cam.y;
+        if (rd.pIBase && (uint8_t *)rd.pIBase >= cam.y && (uint8_t *)rd.pIBase + ysize <= cam.y + cam.size)
+            y = rd.pIBase;
         frames++;
+        SceUInt64 t0 = sceKernelGetProcessTimeWide();
         int seen = 0;
-        int n = qr_decode(dec, cam.y, cam.w, payload, payload_size, &seen);
+        int n = qr_decode(dec, y, cam.w, payload, payload_size, &seen);
+        unsigned decode_ms = (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000);
         in_view = seen > 0;
+
+        // What the camera delivers: the first frames, then one a second, and snapshots to look at.
+        if (frames <= 3 || elapsed - last_diag >= 1000) {
+            last_diag = elapsed;
+            frame_diag(&rd, y, cam.y, cam.w, cam.h, decode_ms, seen);
+        }
+        if (snapshots < 3 && elapsed >= next_snapshot) {
+            save_pgm(++snapshots, y, cam.w, cam.h);
+            next_snapshot += 4000;
+        }
         if (n > 0) {
             result = SCAN_OK;
             break;
