@@ -25,4 +25,8 @@ typedef struct {
 // code was decoded); payload is zero-terminated.
 int qr_decode(qr_decoder *d, const uint8_t *luma, int pitch, char *payload, int payload_size, qr_stats *st);
 
+// The last frame passed to qr_decode, in cached memory (width x height, no padding): cheaper to
+// read than the camera's uncached buffer.
+const uint8_t *qr_decoder_frame(const qr_decoder *d);
+
 #endif

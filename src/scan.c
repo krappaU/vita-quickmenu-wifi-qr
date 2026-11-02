@@ -222,7 +222,8 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
         sceClibMemset(&q, 0, sizeof q);
         int n = qr_decode(dec, y, cam.w, payload, payload_size, &q);
         unsigned decode_ms = (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000);
-        frame_stats f = measure(y, cam.w, cam.h);
+        const uint8_t *fr = qr_decoder_frame(dec); // cached copy: the camera's buffer is slow to read
+        frame_stats f = measure(fr, cam.w, cam.h);
         scan_hint h = hint_for(&f, &q);
         if (h == SCAN_HINT_CODE) {
             if (!code_since) code_since = elapsed ? elapsed : 1;
@@ -234,7 +235,7 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
         if (p->viewfinder && (frames == 1 || elapsed - last_view >= 300)) {
             last_view = elapsed;
             int nc = q.capstones < 4 ? q.capstones : 4;
-            p->viewfinder(y, cam.w, cam.h, q.corner_x, q.corner_y, nc);
+            p->viewfinder(fr, cam.w, cam.h, q.corner_x, q.corner_y, nc);
         }
 
         if (frames <= 2 || elapsed - last_diag >= 1000 || (h > SCAN_HINT_NOTHING && !(snapped & (1 << h)))) {
@@ -247,7 +248,7 @@ scan_result scan_qr(const scan_params *p, char *payload, int payload_size, int *
         // The first frame of each kind, to see why it didn't decode.
         if (h > SCAN_HINT_NOTHING && !(snapped & (1 << h)) && n == 0) {
             snapped |= 1 << h;
-            if (p->snapshots) save_pgm(hint_names[h], y, cam.w, cam.h);
+            if (p->snapshots) save_pgm(hint_names[h], fr, cam.w, cam.h);
         }
         if (n > 0) {
             result = SCAN_OK;

@@ -11,6 +11,7 @@ struct qr_decoder {
     struct quirc *q;
     int w, h;
     uint16_t *rows;  // ENH_RMAX*2+1 rows of horizontal box sums, for enhance()
+    uint8_t *frame;  // the current frame, copied once into cached memory (see qr_decode)
 };
 
 #define ENH_RMAX 4
@@ -74,9 +75,11 @@ qr_decoder *qr_decoder_new(int width, int height) {
     if (!d) return NULL;
     d->q = quirc_new();
     d->rows = malloc(sizeof(uint16_t) * (2 * ENH_RMAX + 1) * (size_t)width);
-    if (!d->q || !d->rows || quirc_resize(d->q, width, height) < 0) {
+    d->frame = malloc((size_t)width * height);
+    if (!d->q || !d->rows || !d->frame || quirc_resize(d->q, width, height) < 0) {
         if (d->q) quirc_destroy(d->q);
         free(d->rows);
+        free(d->frame);
         free(d);
         return NULL;
     }
@@ -89,6 +92,7 @@ void qr_decoder_free(qr_decoder *d) {
     if (!d) return;
     quirc_destroy(d->q);
     free(d->rows);
+    free(d->frame);
     free(d);
 }
 
@@ -128,9 +132,13 @@ int qr_decode(qr_decoder *d, const uint8_t *luma, int pitch, char *payload, int 
     if (!st) st = &local;
     memset(st, 0, sizeof *st);
 
-    int w, h;
+    // One block copy out of the camera's buffer, then everything reads the copy: the camera's
+    // memory is uncached, and reading it pixel by pixel made each sharpened pass take ~1 s on the
+    // console (2026-11-02) instead of a few ms.
+    int w = d->w, h = d->h;
+    for (int y = 0; y < h; y++) memcpy(d->frame + y * w, luma + y * pitch, (size_t)w);
     uint8_t *img = quirc_begin(d->q, &w, &h);
-    for (int y = 0; y < h; y++) memcpy(img + y * w, luma + y * pitch, (size_t)w);
+    memcpy(img, d->frame, (size_t)w * h);
     int n = decode_pass(d, payload, payload_size, st);
     if (n > 0 || st->capstones == 0) return n;
 
@@ -140,10 +148,12 @@ int qr_decode(qr_decoder *d, const uint8_t *luma, int pitch, char *payload, int 
     static const struct { int r, amount; } settings[] = {{3, 2}, {4, 2}, {2, 2}, {3, 3}};
     for (unsigned i = 0; i < sizeof settings / sizeof settings[0]; i++) {
         img = quirc_begin(d->q, &w, &h);
-        enhance(d, luma, pitch, img, settings[i].r, settings[i].amount);
+        enhance(d, d->frame, w, img, settings[i].r, settings[i].amount);
         st->enhanced = (int)i + 1;
         n = decode_pass(d, payload, payload_size, st);
         if (n > 0) return n;
     }
     return 0;
 }
+
+const uint8_t *qr_decoder_frame(const qr_decoder *d) { return d->frame; }
