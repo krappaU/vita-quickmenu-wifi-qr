@@ -4,8 +4,8 @@
 #include "check.h"
 #include "reg_fake.h"
 
-// Values made up for the tests: what the real numbers mean is exactly what the plugin avoids
-// assuming, so any distinct values do.
+// Values made up for the tests, distinct from the system's (open 0, WPA 2), so the tests show
+// whether a value was learned from a saved network or taken from the fallback.
 #define SEC_OPEN 10
 #define SEC_WEP 11
 #define SEC_WPA 12
@@ -64,7 +64,7 @@ static wifi_cred cred(const char *ssid, wifi_sec sec, const char *pass) {
 static void standard_setup(void) {
     reg_fake_reset();
     add(1, "Home", SEC_WPA, "homepass1", "", 1, 0, 0);
-    add(2, "Office-static", SEC_WPA, "officepass", "", 2, 1, 0); // static IP: not a good template
+    add(2, "Office-static", SEC_WPA, "officepass", "", 2, 1, 0); // static IP: must not leak into a new profile
     add(3, "Cafe", SEC_OPEN, "", "", 5, 0, 0);
     add(5, "Old router", SEC_WEP, "", "abcde", 3, 0, 0);       // slot 4 is free
 }
@@ -73,27 +73,33 @@ int main(void) {
     profiles_outcome o;
     wifi_cred c;
 
-    // A new WPA network goes into the first free slot, copies the usual settings and the WPA value
+    // A new WPA network goes into the first free slot with the system's defaults for a new
+    // network (not another slot's static IP or proxy) and the WPA value learned from saved ones
     standard_setup();
     c = cred("Hotel", WIFI_SEC_WPA, "welcome123");
     o = profiles_save(&c);
     CHECK_INT(o.result, PROFILES_ADDED);
     CHECK_INT(o.slot, 4);
-    CHECK_INT(o.template_slot, 1);         // not slot 2, which has a static IP
     CHECK_INT(o.security_value, SEC_WPA);
     CHECK_STR(gets_(4, "WIFI", "ssid"), "Hotel");
     CHECK_STR(gets_(4, "COMMON", "conf_name"), "Hotel");
     CHECK_STR(gets_(4, "WIFI", "wpa_key"), "welcome123");
     CHECK_STR(gets_(4, "WIFI", "wep_key"), "");
     CHECK_INT(geti(4, "WIFI", "wifi_security"), SEC_WPA);
-    CHECK_INT(geti(4, "COMMON", "conf_serial_no"), 6); // after the highest (5)
-    CHECK_INT(geti(4, "COMMON", "device"), 2);
-    CHECK_INT(geti(4, "COMMON", "mtu"), 1500);
+    CHECK_INT(geti(4, "COMMON", "conf_flag"), 1);
+    CHECK_INT(geti(4, "COMMON", "conf_serial_no"), 0);
     CHECK_INT(geti(4, "COMMON", "enable_auto_connect"), 1);
+    CHECK_INT(geti(4, "COMMON", "device"), 0);
+    CHECK_INT(geti(4, "COMMON", "mtu"), 0);
+    CHECK_INT(geti(4, "APP", "http_proxy_flag"), 0);
+    CHECK_INT(geti(4, "APP", "http_proxy_port"), 8080);
+    CHECK_STR(gets_(4, "APP", "http_proxy_server"), "");
     CHECK_INT(geti(4, "IP", "ip_config"), 0);
-    // the template itself is untouched
+    CHECK_STR(gets_(4, "IP", "ip_address"), "");
+    // the other slots are untouched
     CHECK_STR(gets_(1, "WIFI", "ssid"), "Home");
     CHECK_STR(gets_(1, "WIFI", "wpa_key"), "homepass1");
+    CHECK_INT(geti(2, "IP", "ip_config"), 1);
 
     // Scanning it again changes nothing
     o = profiles_save(&c);
@@ -120,7 +126,6 @@ int main(void) {
     c = cred("Guest", WIFI_SEC_OPEN, "");
     o = profiles_save(&c);
     CHECK_INT(o.result, PROFILES_ADDED);
-    CHECK_INT(o.template_slot, 3);
     CHECK_INT(geti(4, "WIFI", "wifi_security"), SEC_OPEN);
     c = cred("Attic", WIFI_SEC_WEP, "0123456789");
     o = profiles_save(&c);
@@ -130,7 +135,7 @@ int main(void) {
     CHECK_STR(gets_(6, "WIFI", "wep_key"), "0123456789");
     CHECK_STR(gets_(6, "WIFI", "wpa_key"), "");
 
-    // No saved network of that type: nothing is written
+    // WEP with no saved WEP network: its value is unknown, so nothing is written
     reg_fake_reset();
     add(1, "Home", SEC_WPA, "homepass1", "", 1, 0, 0);
     c = cred("Attic", WIFI_SEC_WEP, "abcde");
@@ -138,10 +143,18 @@ int main(void) {
     CHECK_INT(o.result, PROFILES_ERR_NO_EXAMPLE);
     CHECK_STR(gets_(2, "WIFI", "ssid"), "");
 
-    // No saved networks at all
+    // No saved networks at all: WPA and open use the values the system wrote (2 and 0)
     reg_fake_reset();
     c = cred("Hotel", WIFI_SEC_WPA, "welcome123");
-    CHECK_INT(profiles_save(&c).result, PROFILES_ERR_NO_EXAMPLE);
+    o = profiles_save(&c);
+    CHECK_INT(o.result, PROFILES_ADDED);
+    CHECK_INT(o.slot, 1);
+    CHECK_INT(geti(1, "WIFI", "wifi_security"), 2);
+    c = cred("Airport", WIFI_SEC_OPEN, "");
+    o = profiles_save(&c);
+    CHECK_INT(o.result, PROFILES_ADDED);
+    CHECK_INT(o.slot, 2);
+    CHECK_INT(geti(2, "WIFI", "wifi_security"), 0);
 
     // All 30 slots used
     reg_fake_reset();
@@ -157,7 +170,7 @@ int main(void) {
     CHECK_INT(profiles_save(&c).result, PROFILES_UPDATED);
 
     // A registry failure part-way leaves the new slot free (the name is written last)
-    for (int fail = 0; fail < 30; fail++) {
+    for (int fail = 0; fail < 40; fail++) {
         standard_setup();
         reg_fake_fail_on_write = fail;
         reg_fake_writes = 0;

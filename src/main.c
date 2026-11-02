@@ -114,8 +114,12 @@ static int worker(SceSize args, void *argp) {
     (void)args, (void)argp;
     static char payload[1024];
     log_printf("--- scan (resolution %d, live labels %d)", cfg.resolution, cfg.live_labels);
-    log_printf("saved networks (secrets masked):");
-    profiles_dump(log_line, NULL, 1);
+    static int listed;
+    if (!listed) { // slow (~1.5 s per network), so once per session
+        log_printf("saved networks (secrets masked):");
+        profiles_dump(log_line, NULL, 1);
+        listed = 1;
+    }
 
     scan_params sp = {
         .width = cfg.resolution,
@@ -126,18 +130,13 @@ static int worker(SceSize args, void *argp) {
     };
     int cam_err = 0;
     scan_result sr = scan_qr(&sp, payload, sizeof payload, &cam_err);
-    if (sr == SCAN_NO_MEMORY && sp.width == 640) {
-        log_printf("retrying at 320x240");
-        sp.width = 320, sp.height = 240;
-        sr = scan_qr(&sp, payload, sizeof payload, &cam_err);
-    }
     switch (sr) {
     case SCAN_OK: break;
     case SCAN_CANCELLED: set_status("Cancelled"); goto done;
     case SCAN_TIMEOUT: set_status("No Wi-Fi QR code found. Try again closer, with the screen bright"); goto done;
     case SCAN_NO_MEMORY: set_status("Not enough memory for the camera"); goto done;
     case SCAN_CAMERA_ERROR:
-        set_status("Camera unavailable (0x%08X). Is the game using it?", (unsigned)cam_err);
+        set_status("Camera unavailable (0x%08X). See ux0:data/wifiqr/log.txt", (unsigned)cam_err);
         goto done;
     }
 
@@ -154,8 +153,8 @@ static int worker(SceSize args, void *argp) {
     set_status("Saving %s...", c.ssid);
     backup_profiles();
     profiles_outcome po = profiles_save(&c);
-    log_printf("save: %s, slot %d, template %d, wifi_security %d, reg error 0x%08x", profiles_result_str(po.result),
-               po.slot, po.template_slot, po.security_value, (unsigned)po.reg_error);
+    log_printf("save: %s, slot %d, wifi_security %d, reg error 0x%08x", profiles_result_str(po.result), po.slot,
+               po.security_value, (unsigned)po.reg_error);
     if (po.result >= PROFILES_ERR_FULL) {
         if (po.result == PROFILES_ERR_REGISTRY) set_status("%s (0x%08X)", profiles_result_str(po.result), (unsigned)po.reg_error);
         else if (po.result == PROFILES_ERR_NO_EXAMPLE) set_status("%s (%s)", profiles_result_str(po.result), wifi_sec_str(c.sec));

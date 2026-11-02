@@ -11,35 +11,38 @@ typedef struct {
     const char *name;
     int is_str;
     int size;          // string field size including the terminator
+    int def;           // what the Vita's Wi-Fi Settings writes for a new network (strings: "")
 } key_def;
 
-// Every key of a profile (sizes from Registry Editor MOD's regs.c).
+// Every key of a profile (sizes from Registry Editor MOD's regs.c). The defaults are what the
+// system's own Wi-Fi Settings popup wrote when it saved a new WPA network (registry dumps before
+// and after, 2026-11-02): all integers 0 except these, all strings empty.
 static const key_def KEYS[] = {
-    {"APP", "http_proxy_flag", 0, 4},
-    {"APP", "http_proxy_port", 0, 4},
-    {"APP", "http_proxy_server", 1, 256},
-    {"COMMON", "conf_flag", 0, 4},
-    {"COMMON", "conf_name", 1, 65},
-    {"COMMON", "conf_serial_no", 0, 4},
-    {"COMMON", "conf_type", 0, 4},
-    {"COMMON", "device", 0, 4},
-    {"COMMON", "enable_auto_connect", 0, 4},
-    {"COMMON", "ether_mode", 0, 4},
-    {"COMMON", "mtu", 0, 4},
-    {"IP", "auth_key", 1, 128},
-    {"IP", "auth_name", 1, 128},
-    {"IP", "default_route", 1, 16},
-    {"IP", "dhcp_hostname", 1, 256},
-    {"IP", "dns_flag", 0, 4},
-    {"IP", "ip_address", 1, 16},
-    {"IP", "ip_config", 0, 4},
-    {"IP", "netmask", 1, 16},
-    {"IP", "primary_dns", 1, 16},
-    {"IP", "secondary_dns", 1, 16},
-    {"WIFI", "ssid", 1, 33},
-    {"WIFI", "wep_key", 1, 27},
-    {"WIFI", "wifi_security", 0, 4},
-    {"WIFI", "wpa_key", 1, 65},
+    {"APP", "http_proxy_flag", 0, 4, 0},
+    {"APP", "http_proxy_port", 0, 4, 8080},
+    {"APP", "http_proxy_server", 1, 256, 0},
+    {"COMMON", "conf_flag", 0, 4, 1},
+    {"COMMON", "conf_name", 1, 65, 0},
+    {"COMMON", "conf_serial_no", 0, 4, 0},
+    {"COMMON", "conf_type", 0, 4, 0},
+    {"COMMON", "device", 0, 4, 0},
+    {"COMMON", "enable_auto_connect", 0, 4, 1},
+    {"COMMON", "ether_mode", 0, 4, 0},
+    {"COMMON", "mtu", 0, 4, 0},
+    {"IP", "auth_key", 1, 128, 0},
+    {"IP", "auth_name", 1, 128, 0},
+    {"IP", "default_route", 1, 16, 0},
+    {"IP", "dhcp_hostname", 1, 256, 0},
+    {"IP", "dns_flag", 0, 4, 0},
+    {"IP", "ip_address", 1, 16, 0},
+    {"IP", "ip_config", 0, 4, 0},
+    {"IP", "netmask", 1, 16, 0},
+    {"IP", "primary_dns", 1, 16, 0},
+    {"IP", "secondary_dns", 1, 16, 0},
+    {"WIFI", "ssid", 1, 33, 0},
+    {"WIFI", "wep_key", 1, 27, 0},
+    {"WIFI", "wifi_security", 0, 4, 0},
+    {"WIFI", "wpa_key", 1, 65, 0},
 };
 #define NKEYS (int)(sizeof KEYS / sizeof KEYS[0])
 
@@ -49,9 +52,6 @@ typedef struct {
     char wpa_key[65];
     char wep_key[27];
     int security;
-    int serial;
-    int ip_config;
-    int proxy_flag;
 } slot_info;
 
 static void cat_path(char *out, int size, int slot, const char *sub) {
@@ -67,47 +67,12 @@ static void read_slot(int slot, slot_info *s) {
     reg_get_str(cat, "wpa_key", s->wpa_key, sizeof s->wpa_key);
     reg_get_str(cat, "wep_key", s->wep_key, sizeof s->wep_key);
     reg_get_int(cat, "wifi_security", &s->security);
-    cat_path(cat, sizeof cat, slot, "COMMON");
-    reg_get_int(cat, "conf_serial_no", &s->serial);
-    cat_path(cat, sizeof cat, slot, "IP");
-    reg_get_int(cat, "ip_config", &s->ip_config);
-    cat_path(cat, sizeof cat, slot, "APP");
-    reg_get_int(cat, "http_proxy_flag", &s->proxy_flag);
 }
 
 static wifi_sec slot_type(const slot_info *s) {
     if (s->wpa_key[0]) return WIFI_SEC_WPA;
     if (s->wep_key[0]) return WIFI_SEC_WEP;
     return WIFI_SEC_OPEN;
-}
-
-// The most common value among used slots: what most saved networks use (most likely automatic IP
-// and no proxy), so a new profile doesn't inherit one network's static IP or proxy.
-static int most_common(const slot_info *slots, int field) {
-    int best = 0, best_n = -1;
-    for (int i = 0; i < PROFILE_SLOTS; i++) {
-        if (!slots[i].used) continue;
-        int v = field ? slots[i].proxy_flag : slots[i].ip_config, n = 0;
-        for (int j = 0; j < PROFILE_SLOTS; j++)
-            if (slots[j].used && (field ? slots[j].proxy_flag : slots[j].ip_config) == v) n++;
-        if (n > best_n) best = v, best_n = n;
-    }
-    return best;
-}
-
-static int copy_key(int from, int to, const key_def *k) {
-    char src[48], dst[48];
-    cat_path(src, sizeof src, from, k->sub);
-    cat_path(dst, sizeof dst, to, k->sub);
-    if (k->is_str) {
-        char buf[256];
-        int rc = reg_get_str(src, k->name, buf, k->size);
-        if (rc < 0) return rc;
-        return reg_set_str(dst, k->name, buf, k->size);
-    }
-    int v = 0, rc = reg_get_int(src, k->name, &v);
-    if (rc < 0) return rc;
-    return reg_set_int(dst, k->name, v);
 }
 
 #define CHECK(call) do { int rc_ = (call); if (rc_ < 0) { o.result = PROFILES_ERR_REGISTRY; o.reg_error = rc_; return o; } } while (0)
@@ -126,31 +91,30 @@ profiles_outcome profiles_save(const wifi_cred *c) {
     slot_info slots[PROFILE_SLOTS];
     for (int i = 0; i < PROFILE_SLOTS; i++) read_slot(i + 1, &slots[i]);
 
-    int same = -1, free_slot = -1, max_serial = 0;
+    int same = -1, free_slot = -1;
     for (int i = 0; i < PROFILE_SLOTS; i++) {
         if (!slots[i].used) {
             if (free_slot < 0) free_slot = i;
             continue;
         }
         if (same < 0 && strcmp(slots[i].ssid, c->ssid) == 0) same = i;
-        if (slots[i].serial > max_serial) max_serial = slots[i].serial;
     }
 
-    // The wifi_security value for this type, learned from a saved network of the same type.
-    // Prefer the network being updated, then one matching the usual IP/proxy settings.
-    int want_ip = most_common(slots, 0), want_proxy = most_common(slots, 1);
+    // The wifi_security value for this type: from a saved network of the same type (preferring
+    // the one being updated), else the values the system wrote on 2026-11-02 (open 0, WPA 2).
+    // WEP has no confirmed value, so it needs an example.
     int example = -1;
     if (same >= 0 && slot_type(&slots[same]) == c->sec) example = same;
-    for (int pass = 0; pass < 2 && example < 0; pass++)
-        for (int i = 0; i < PROFILE_SLOTS && example < 0; i++)
-            if (slots[i].used && slot_type(&slots[i]) == c->sec &&
-                (pass == 1 || (slots[i].ip_config == want_ip && slots[i].proxy_flag == want_proxy)))
-                example = i;
-    if (example < 0) {
+    for (int i = 0; i < PROFILE_SLOTS && example < 0; i++)
+        if (slots[i].used && slot_type(&slots[i]) == c->sec) example = i;
+    if (example >= 0) {
+        o.security_value = slots[example].security;
+    } else if (c->sec == WIFI_SEC_WPA || c->sec == WIFI_SEC_OPEN) {
+        o.security_value = c->sec == WIFI_SEC_WPA ? 2 : 0;
+    } else {
         o.result = PROFILES_ERR_NO_EXAMPLE;
         return o;
     }
-    o.security_value = slots[example].security;
 
     if (same >= 0) {
         const slot_info *s = &slots[same];
@@ -171,18 +135,19 @@ profiles_outcome profiles_save(const wifi_cred *c) {
         return o;
     }
     o.slot = free_slot + 1;
-    o.template_slot = example + 1;
 
-    // Everything from the template except the name, which goes last: until then the slot's ssid
-    // is still empty, so a half-written profile stays a free slot.
-    for (int k = 0; k < NKEYS; k++) {
-        if (strcmp(KEYS[k].name, "ssid") == 0) continue;
-        CHECK(copy_key(o.template_slot, o.slot, &KEYS[k]));
-    }
+    // The system's defaults for every key except the name, which goes last: until then the
+    // slot's ssid is still empty, so a half-written profile stays a free slot.
     char cat[48];
+    for (int k = 0; k < NKEYS; k++) {
+        const key_def *kd = &KEYS[k];
+        if (strcmp(kd->name, "ssid") == 0) continue;
+        cat_path(cat, sizeof cat, o.slot, kd->sub);
+        if (kd->is_str) CHECK(reg_set_str(cat, kd->name, "", kd->size));
+        else CHECK(reg_set_int(cat, kd->name, kd->def));
+    }
     cat_path(cat, sizeof cat, o.slot, "COMMON");
     CHECK(reg_set_str(cat, "conf_name", c->ssid, 65));
-    CHECK(reg_set_int(cat, "conf_serial_no", max_serial + 1));
     o = write_secrets(o, o.slot, c, o.security_value);
     if (o.result == PROFILES_ERR_REGISTRY) return o;
     cat_path(cat, sizeof cat, o.slot, "WIFI");

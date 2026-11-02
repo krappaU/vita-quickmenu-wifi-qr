@@ -18,6 +18,8 @@ camera at the phone. iOS shares the same code format in its Wi-Fi settings.
    game, so the game keeps running.
 2. **Scan.** It reads 640×480 frames from the back camera (320×240 if memory is short) and decodes
    them with [quirc](https://github.com/dlbeer/quirc) until it finds a code, for up to 30 seconds.
+   The camera needs physically contiguous memory, which is scarce in SceShell, so the plugin tries
+   each kind that can provide it and logs the results.
 3. **Parse.** It reads the `WIFI:T:WPA;S:<name>;P:<password>;;` text. Networks the Vita can't join
    are rejected with a message: WPA3-only (SAE) and enterprise (802.1X). 5 GHz-only networks can't
    be detected from the code.
@@ -25,13 +27,13 @@ camera at the phone. iOS shares the same code format in its Wi-Fi settings.
    (layout from [Vita Account Manager](https://github.com/windsurfer1122/Vita-Account-Manager) and
    [Registry Editor MOD](https://github.com/devnoname120/RegistryEditorMOD)).
    - A network with the same name is updated in place.
-   - A new one goes in the first free slot. All its keys (IP, proxy, connection settings) are copied
-     from a network you already saved, preferring one with the most common IP and proxy settings, so
-     a static-IP network isn't copied. Then the name, security type and password are set. The name
-     is written last, so a slot that is only half written still counts as free.
-   - The `wifi_security` number for WPA, WEP or open is copied from a saved network of the same
-     type, because what the numbers mean isn't documented. **You need at least one network of that
-     type saved through Settings first**; most people already have a WPA one.
+   - A new one goes in the first free slot with the values the Vita's own Wi-Fi Settings writes
+     for a new network (automatic IP, no proxy, auto-connect on), found by comparing the registry
+     before and after the system saved one. The name is written last, so a slot that is only half
+     written still counts as free.
+   - The `wifi_security` number is copied from a saved network of the same type. Without one, WPA
+     uses 2 and open networks 0, the values the system wrote. WEP has no confirmed value, so it
+     needs one WEP network already saved through Settings.
    - Before the first change in each session, every saved network is copied to
      `ux0:data/wifiqr/backup-<date>.txt`.
 5. **Connect.** The Vita connects on demand: when an app uses the network, it joins a saved network
@@ -73,16 +75,17 @@ The QR payload and passwords are never logged.
 
 Things only a real Vita can answer. The log shows each of them:
 
-- [ ] **The camera works from SceShell while a game runs.** Check for a `camera buffer:` line and
-      scan frames. The camera is probably unavailable while a game that uses it is running.
+- [ ] **The camera works from SceShell.** Look for a `camera ...: started` line. On 2026-11-02,
+      `sceCameraStart` refused ordinary memory with `0x80024003` (not physically contiguous), the
+      PHYCONT type with `0x80024A00` and CDRAM with `0x80024309` (full at 512 KB). The log now lists
+      every kind tried.
 - [ ] **The registry write is enough.** The new network shows in Settings → Network → Wi-Fi Settings
-      and works. If the Vita ignores it, compare the new slot with one made by Settings in the backup
-      file: `conf_serial_no`, `conf_flag` and `conf_type` are the likely candidates.
+      and works.
 - [ ] **The DNS lookup starts the connection.** `netctl state: connecting` should follow
       `trigger: DNS lookup`. If it only follows `trigger: TCP connect`, swap their order.
 - [ ] **Live label updates don't crash the shell** (`live_labels`).
-- [ ] **What the `wifi_security` values mean.** The log shows each saved network's value, and what
-      netctl reports for the connected one.
+- [x] **What the `wifi_security` values mean:** open 0, WPA/WPA2-PSK 2 (WEP not seen yet).
+- [x] **What the system writes for a new network:** see step 4.
 
 ## Build
 
