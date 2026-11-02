@@ -123,13 +123,22 @@ static void on_preview(const uint8_t *luma, int w, int h, const int *cx, const i
     // Box-average down to the preview size (2x2 from 640x480; 1:1 from 320x240).
     const int sx = w / PREVIEW_W, sy = h / PREVIEW_H;
     if (sx < 1 || sy < 1) return;
-    for (int y = 0; y < PREVIEW_H; y++)
-        for (int x = 0; x < PREVIEW_W; x++) {
-            unsigned sum = 0;
-            for (int j = 0; j < sy; j++)
-                for (int i = 0; i < sx; i++) sum += luma[(y * sy + j) * w + x * sx + i];
-            small[y * PREVIEW_W + x] = (uint8_t)(sum / (unsigned)(sx * sy));
+    if (sx == 2 && sy == 2) { // 640x480: shifts, not a software divide per pixel
+        for (int y = 0; y < PREVIEW_H; y++) {
+            const uint8_t *a = luma + 2 * y * w, *b = a + w;
+            uint8_t *o = small + y * PREVIEW_W;
+            for (int x = 0; x < PREVIEW_W; x++) o[x] = (uint8_t)((a[2 * x] + a[2 * x + 1] + b[2 * x] + b[2 * x + 1]) >> 2);
         }
+    } else {
+        const unsigned n = (unsigned)(sx * sy);
+        for (int y = 0; y < PREVIEW_H; y++)
+            for (int x = 0; x < PREVIEW_W; x++) {
+                unsigned sum = 0;
+                for (int j = 0; j < sy; j++)
+                    for (int i = 0; i < sx; i++) sum += luma[(y * sy + j) * w + x * sx + i];
+                small[y * PREVIEW_W + x] = (uint8_t)(n == 1 ? sum : sum / n);
+            }
+    }
     int c[8];
     for (int i = 0; i < corners && i < 4; i++) c[2 * i] = cx[i] / sx, c[2 * i + 1] = cy[i] / sy;
     int rc = wifiqrPreviewSet(small, PREVIEW_W, PREVIEW_H, c, corners);

@@ -78,12 +78,21 @@ float sqrtf(float x) { float r; __asm__("vsqrt.f32 %0, %1" : "=t"(r) : "t"(x)); 
 double sqrt(double x) { double r; __asm__("vsqrt.f64 %P0, %P1" : "=w"(r) : "w"(x)); return r; }
 float fabsf(float x) { return x < 0 ? -x : x; }
 double fabs(double x) { return x < 0 ? -x : x; }
-double rint(double x) { // round half to even, as rint does in the default rounding mode
-    double f = (double)(long long)x;
-    if (x < 0 && f != x) f -= 1;  // floor
-    double r = x - f;
-    if (r > 0.5 || (r == 0.5 && ((long long)f & 1))) f += 1;
-    return f;
+// rint/rintf round to the nearest integer, ties to even (the default rounding mode): one VFP
+// instruction, vcvtr, does exactly that. quirc's grid fitting calls rintf ~2 million times per
+// frame with a code in view; the first version, through a 64-bit integer conversion that the
+// Cortex-A9 does in software, made those frames take ~0.7 s on the console (log of 2026-11-02).
+// Pixel coordinates are well inside the int range vcvtr saturates to.
+float rintf(float x) {
+    float r;
+    __asm__("vcvtr.s32.f32 %0, %1\n\tvcvt.f32.s32 %0, %0" : "=t"(r) : "t"(x));
+    return r;
 }
-float rintf(float x) { return (float)rint(x); }
+double rint(double x) {
+    float tmp;
+    double r;
+    __asm__("vcvtr.s32.f64 %0, %P1" : "=t"(tmp) : "w"(x));
+    __asm__("vcvt.f64.s32 %P0, %1" : "=w"(r) : "t"(tmp));
+    return r;
+}
 int abs(int x) { return x < 0 ? -x : x; }
