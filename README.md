@@ -69,8 +69,7 @@ Three plugins:
 
 | File | What | Where |
 |---|---|---|
-| `wifiqr.suprx` | a loader: loads the core once the shell has started | `ur0:tai/`, under `*main` |
-| `wifiqr_core.suprx` | the core: camera, decoding, saving, connecting | `ur0:tai/` (not in `config.txt`) |
+| `wifiqr.suprx` | the core: camera, decoding, saving, connecting | `ur0:tai/`, under `*main` |
 | `wifiqr_qm.suprx` | the Quick Menu button | `ur0:QuickMenuReborn/` (needs [QuickMenuReborn](https://github.com/Ibrahim778/QuickMenuReborn)) |
 | `wifiqr_kernel.skprx` | the camera preview over the shell's frames (optional) | `ur0:tai/`, under `*KERNEL` |
 
@@ -88,9 +87,13 @@ the NIDs PSVshell uses, known for firmware 3.60 and 3.65; without it, or if the 
 button shows a text viewfinder instead. Reboot after installing.
 
 The button finds the core at run time (`taiGetModuleExportFunc`), so the order the plugins load in
-doesn't matter; without the core it says so. The core isn't listed under `*main` itself: loaded
-that early it crashed on its first library call (2026-11-03), while loaded later it works, so the
-loader starts it 5 s after the shell, as QuickMenuReborn does with its plugins.
+doesn't matter; without the core it says so.
+
+The core is loaded early in the shell's start-up, so it imports only libraries present from the
+start of the shell's process. The network libraries (libnet, libnetctl) are loaded later, on
+demand: the core finds their functions at run time (`src/net_dyn.c`). Importing them made the
+core fail to load, or crash on calls through unlinked import stubs, which jump to address 0
+(found with a self-test, 2026-11-03; `wifiqrSelfTest` is still exported).
 
 ## Settings
 

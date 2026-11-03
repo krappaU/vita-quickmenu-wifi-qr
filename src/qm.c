@@ -26,7 +26,6 @@ void *_ZNK3paf6Plugin12GetInterfaceEi(const void *plugin, int version);
 #define STATUS_ID "wifiqr_qm_status"
 #define VIEW_ID "wifiqr_qm_view"
 #define WIFI_BUTTON_ID "wifiqr_qm_wifi_button"
-#define TEST_BUTTON_ID "wifiqr_qm_test_button"
 
 #define BUTTON_SCAN "Scan Wi-Fi QR"
 #define BUTTON_CANCEL "Cancel"
@@ -130,41 +129,6 @@ static void open_wifi_popup(void) {
     if (rc < 0) sceClibSnprintf(status, sizeof status, "Couldn't open the Wi-Fi popup (0x%08X)", (unsigned)rc);
 }
 
-// --- diagnostic: the core's self-test (src/selftest.c), logged from here ---------------------
-
-static void on_selftest_report(const char *text, void *ud) {
-    (void)ud;
-    log_printf("%s", text);
-}
-
-BUTTON_HANDLER(on_test_button) {
-    (void)id, (void)hash, (void)eventId, (void)userDat;
-    uintptr_t f = 0;
-    int rc = taiGetModuleExportFunc(WIFIQR_MODULE, WIFIQR_LIB_NID, WIFIQR_NID_SELFTEST, &f);
-    log_printf("self-test button: lookup 0x%08x, function %08x", (unsigned)rc, (unsigned)f);
-    if (rc < 0) {
-        // Not found: list what is loaded in this process, to see whether the core is there.
-        static SceUID ids[256];
-        SceSize n = 256;
-        int lrc = sceKernelGetModuleList(0xFF, ids, &n);
-        log_printf("modules in this process: 0x%08x, %u", (unsigned)lrc, (unsigned)n);
-        for (SceSize i = 0; lrc >= 0 && i < n; i++) {
-            static SceKernelModuleInfo info;
-            sceClibMemset(&info, 0, sizeof info);
-            info.size = sizeof info;
-            if (sceKernelGetModuleInfo(ids[i], &info) >= 0)
-                log_printf("  %-27s %p %s", info.module_name, info.segments[0].vaddr, info.path);
-        }
-        sceClibSnprintf(status, sizeof status, "Core not found (0x%08X): module list in the log", (unsigned)rc);
-        show(STATUS_ID, status);
-        return;
-    }
-    rc = ((wifiqrSelfTest_fn)f)(on_selftest_report, NULL);
-    log_printf("self-test button: returned 0x%08x", (unsigned)rc);
-    sceClibSnprintf(status, sizeof status, "Self-test finished (0x%08X): see ux0:data/wifiqr/log.txt", (unsigned)rc);
-    show(STATUS_ID, status);
-}
-
 // --- widgets ----------------------------------------------------------------------------------
 
 BUTTON_HANDLER(on_button) {
@@ -172,7 +136,7 @@ BUTTON_HANDLER(on_button) {
     int rc = find_core();
     log_printf("scan button: core lookup 0x%08x", (unsigned)rc);
     if (rc < 0) {
-        sceClibSnprintf(status, sizeof status, "Wi-Fi QR core not loaded: wifiqr.suprx under *main, wifiqr_core.suprx next to it (0x%08X)",
+        sceClibSnprintf(status, sizeof status, "Wi-Fi QR core not loaded: add wifiqr.suprx under *main (0x%08X)",
                         (unsigned)rc);
         show(STATUS_ID, status);
         return;
@@ -231,12 +195,6 @@ int module_start(SceSize args, void *argp) {
     QuickMenuRebornSetWidgetLabel(WIFI_BUTTON_ID, "Wi-Fi Settings");
     QuickMenuRebornRegisterEventHanlder(WIFI_BUTTON_ID, QMR_BUTTON_RELEASE_ID, on_wifi_button, NULL);
 
-    QuickMenuRebornRegisterWidget(TEST_BUTTON_ID, NULL, button);
-    QuickMenuRebornSetWidgetSize(TEST_BUTTON_ID, 320, 75, 0, 0);
-    QuickMenuRebornSetWidgetColor(TEST_BUTTON_ID, 1, 1, 1, 1);
-    QuickMenuRebornSetWidgetLabel(TEST_BUTTON_ID, "Self-test");
-    QuickMenuRebornRegisterEventHanlder(TEST_BUTTON_ID, QMR_BUTTON_RELEASE_ID, on_test_button, NULL);
-
     QuickMenuRebornRegisterWidget(STATUS_ID, NULL, text);
     QuickMenuRebornSetWidgetSize(STATUS_ID, SCE_PLANE_WIDTH, 60, 0, 0);
     QuickMenuRebornSetWidgetColor(STATUS_ID, 1, 1, 1, 1);
@@ -261,7 +219,6 @@ int module_stop(SceSize args, void *argp) {
     }
     QuickMenuRebornUnregisterWidget(VIEW_ID);
     QuickMenuRebornUnregisterWidget(STATUS_ID);
-    QuickMenuRebornUnregisterWidget(TEST_BUTTON_ID);
     QuickMenuRebornUnregisterWidget(WIFI_BUTTON_ID);
     QuickMenuRebornUnregisterWidget(BUTTON_ID);
     QuickMenuRebornUnregisterWidget(TITLE_ID);

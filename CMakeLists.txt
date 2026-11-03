@@ -56,15 +56,9 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin-printf -fno-math-errno -DNDEBUG")
 add_compile_definitions(QUIRC_FLOAT_TYPE=float QUIRC_USE_TGMATH)
 
-# Loader: wifiqr.suprx, under *main in taiHEN's config.txt. Loads the core once the shell has
-# started (src/loader.c says why).
-add_executable(wifiqr_loader src/loader.c)
-target_link_options(wifiqr_loader PRIVATE -nostdlib)
-target_link_libraries(wifiqr_loader SceIofilemgr_stub SceKernelThreadMgr_stub SceLibKernel_stub SceKernelModulemgr_stub gcc)
-vita_create_self(wifiqr.suprx wifiqr_loader CONFIG ${CMAKE_SOURCE_DIR}/loader.yml UNSAFE)
-
-# Core: wifiqr_core.suprx, loaded into SceShell by the loader. Scanning, saving, connecting, and
-# the API front ends call (src/wifiqr_api.h).
+# Core: wifiqr.suprx, loaded into SceShell by taiHEN (*main). Scanning, saving, connecting, and
+# the API front ends call (src/wifiqr_api.h). It may import only libraries present from the start
+# of the shell's process: the network libraries are looked up at run time (src/net_dyn.h).
 add_executable(wifiqr
   src/core.c
   src/connect.c
@@ -104,7 +98,7 @@ target_link_libraries(wifiqr
   SceSysmem_stub
   gcc
 )
-vita_create_self(wifiqr_core.suprx wifiqr CONFIG ${CMAKE_SOURCE_DIR}/core.yml UNSAFE)
+vita_create_self(wifiqr.suprx wifiqr CONFIG ${CMAKE_SOURCE_DIR}/core.yml UNSAFE)
 
 # The NIDs front ends look the API up by (src/wifiqr_api.h) must match the core's exports.
 add_custom_command(TARGET wifiqr POST_BUILD
