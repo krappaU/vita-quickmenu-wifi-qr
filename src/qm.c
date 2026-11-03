@@ -136,7 +136,7 @@ BUTTON_HANDLER(on_button) {
     int rc = find_core();
     log_printf("scan button: core lookup 0x%08x", (unsigned)rc);
     if (rc < 0) {
-        sceClibSnprintf(status, sizeof status, "Wi-Fi QR core not loaded: add wifiqr.suprx under *main (0x%08X)",
+        sceClibSnprintf(status, sizeof status, "Wi-Fi QR core not loaded: wifiqr.suprx under *main, wifiqr_core.suprx next to it (0x%08X)",
                         (unsigned)rc);
         show(STATUS_ID, status);
         return;
