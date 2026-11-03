@@ -13,12 +13,11 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/sysmem.h>
 #include <psp2/kernel/threadmgr.h>
-#include <psp2/net/net.h>
-#include <psp2/net/netctl.h>
 #include <psp2/registrymgr.h>
 #include <psp2/rtc.h>
 
 #include "log.h"
+#include "net_dyn.h"
 #include "wifiqr_api.h"
 #include "wifiqr_kernel.h"
 
@@ -76,12 +75,20 @@ int wifiqrSelfTest(wifiqr_report_fn fn, void *ud) {
     if (blk >= 0) STEP(sceKernelFreeMemBlock, sceKernelFreeMemBlock(blk));         // SceSysmem
     int v = -1;
     STEP(sceRegMgrGetKeyInt, sceRegMgrGetKeyInt("/CONFIG/NET", "wifi_flag", &v)); // SceRegMgr
-    int state = -1;
-    STEP(sceNetCtlInetGetState, sceNetCtlInetGetState(&state));                    // SceNetCtl
-    STEP(sceNetHtons, sceNetHtons(1));                                             // SceNet
+    const net_fns *net = NULL;
+    say("calling net_resolve (taiGetModuleExportFunc for SceNet, SceLibNetCtl)");
+    int nrc = net_resolve(&net);
+    say("  net_resolve -> 0x%08x", (unsigned)nrc);
+    if (nrc >= 0) {
+        int state = -1;
+        say("calling CtlInetGetState at %p", (const void *)net->CtlInetGetState);
+        say("  CtlInetGetState -> 0x%08x (state %d)", (unsigned)net->CtlInetGetState(&state), state);
+    }
     STEP(sceCameraIsActive, sceCameraIsActive(SCE_CAMERA_DEVICE_BACK));            // SceCamera
     stub_words("SceShell_60129092 (not called)", (const void *)&SceShell_60129092);
-    STEP(wifiqrPreviewOff, wifiqrPreviewOff());                                    // WifiQrKernel (weak)
+    stub_words("wifiqrPreviewOff (weak, called only if linked)", (const void *)&wifiqrPreviewOff);
+    if (import_linked((const void *)&wifiqrPreviewOff)) say("  wifiqrPreviewOff -> 0x%08x", (unsigned)wifiqrPreviewOff());
+    else say("  not linked: the kernel helper isn't loaded");
     say("calling log_printf");
     log_printf("self-test: the core's own logging works");
     say("self-test: done");

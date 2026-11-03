@@ -4,10 +4,10 @@
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
-#include <psp2/net/net.h>
-#include <psp2/net/netctl.h>
-
 #include "log.h"
+#include "net_dyn.h"
+
+static const net_fns *net; // set by connect_now (net_dyn.h: looked up, not imported)
 
 static const char *state_name(int s) {
     switch (s) {
@@ -20,7 +20,7 @@ static const char *state_name(int s) {
 }
 
 static int get_state(void) {
-    int s = -1, rc = sceNetCtlInetGetState(&s);
+    int s = -1, rc = net->CtlInetGetState(&s);
     if (rc < 0) {
         log_printf("sceNetCtlInetGetState: 0x%08x", rc);
         return -1;
@@ -32,46 +32,51 @@ static void get_ssid(char *out, int size) {
     SceNetCtlInfo info;
     sceClibMemset(&info, 0, sizeof info);
     out[0] = 0;
-    if (sceNetCtlInetGetInfo(SCE_NETCTL_INFO_GET_SSID, &info) >= 0) sceClibStrncpy(out, info.ssid, size - 1);
+    if (net->CtlInetGetInfo(SCE_NETCTL_INFO_GET_SSID, &info) >= 0) sceClibStrncpy(out, info.ssid, size - 1);
     out[size - 1] = 0;
     SceNetCtlInfo sec;
-    if (sceNetCtlInetGetInfo(SCE_NETCTL_INFO_GET_WIFI_SECURITY, &sec) >= 0)
+    if (net->CtlInetGetInfo(SCE_NETCTL_INFO_GET_WIFI_SECURITY, &sec) >= 0)
         log_printf("connected network's wifi_security (netctl): %u", sec.wifi_security);
 }
 
 static void trigger_dns(void) {
-    int rid = sceNetResolverCreate("wifiqr", NULL, 0);
+    int rid = net->ResolverCreate("wifiqr", NULL, 0);
     if (rid < 0) {
         log_printf("sceNetResolverCreate: 0x%08x", rid);
         return;
     }
     SceNetInAddr addr;
-    int rc = sceNetResolverStartNtoa(rid, "www.playstation.net", &addr, 0, 0, 0);
+    int rc = net->ResolverStartNtoa(rid, "www.playstation.net", &addr, 0, 0, 0);
     log_printf("trigger: DNS lookup -> 0x%08x", rc);
-    sceNetResolverDestroy(rid);
+    net->ResolverDestroy(rid);
 }
 
 static void trigger_tcp(void) {
-    int s = sceNetSocket("wifiqr", SCE_NET_AF_INET, SCE_NET_SOCK_STREAM, 0);
+    int s = net->Socket("wifiqr", SCE_NET_AF_INET, SCE_NET_SOCK_STREAM, 0);
     if (s < 0) {
         log_printf("sceNetSocket: 0x%08x", s);
         return;
     }
     int nb = 1;
-    sceNetSetsockopt(s, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &nb, sizeof nb);
+    net->Setsockopt(s, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &nb, sizeof nb);
     SceNetSockaddrIn sa;
     sceClibMemset(&sa, 0, sizeof sa);
     sa.sin_len = sizeof sa;
     sa.sin_family = SCE_NET_AF_INET;
-    sa.sin_port = sceNetHtons(80);
-    sceNetInetPton(SCE_NET_AF_INET, "1.1.1.1", &sa.sin_addr);
-    int rc = sceNetConnect(s, (SceNetSockaddr *)&sa, sizeof sa);
+    sa.sin_port = net->Htons(80);
+    net->InetPton(SCE_NET_AF_INET, "1.1.1.1", &sa.sin_addr);
+    int rc = net->Connect(s, (SceNetSockaddr *)&sa, sizeof sa);
     log_printf("trigger: TCP connect -> 0x%08x", rc);
-    sceNetSocketClose(s);
+    net->SocketClose(s);
 }
 
 connect_result connect_now(const char *ssid, int timeout_ms, volatile int *cancel, char *connected_ssid, int size) {
     connected_ssid[0] = 0;
+    int rc = net_resolve(&net);
+    if (rc < 0) {
+        log_printf("network library not loaded: 0x%08x", (unsigned)rc);
+        return CONNECT_NONE;
+    }
     int s = get_state();
     log_printf("netctl state before: %s", state_name(s));
     if (s == SCE_NETCTL_STATE_CONNECTED) {

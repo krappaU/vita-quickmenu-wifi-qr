@@ -70,6 +70,7 @@ add_executable(wifiqr
   src/connect.c
   src/libc_shim.c
   src/log.c
+  src/net_dyn.c
   src/profiles.c
   src/qr_decode.c
   src/reg_vita.c
@@ -97,8 +98,7 @@ target_link_libraries(wifiqr
   SceIofilemgr_stub
   SceKernelThreadMgr_stub
   SceLibKernel_stub
-  SceNetCtl_stub
-  SceNet_stub
+  taihen_stub  # net_dyn.c: the network libraries are looked up, not imported
   SceRegistryMgr_stub
   SceRtc_stub
   SceSysmem_stub

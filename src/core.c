@@ -12,6 +12,7 @@
 
 #include "connect.h"
 #include "log.h"
+#include "net_dyn.h"
 #include "profiles.h"
 #include "scan.h"
 #include "viewfinder.h"
@@ -110,6 +111,12 @@ static int kpreview = 1;
 static void on_preview(const uint8_t *luma, int w, int h, const int *cx, const int *cy, int corners) {
     static uint8_t small[PREVIEW_W * PREVIEW_H];
     if (!kpreview) return;
+    if (kpreview == 1 && !import_linked((const void *)&wifiqrPreviewSet)) {
+        // Weak import, kernel helper not installed: its stub would jump to address 0.
+        log_printf("picture preview unavailable (kernel helper not loaded): using the text viewfinder");
+        kpreview = 0;
+        return;
+    }
     // Box-average down to the preview size (2x2 from 640x480; 1:1 from 320x240).
     const int sx = w / PREVIEW_W, sy = h / PREVIEW_H;
     if (sx < 1 || sy < 1) return;
