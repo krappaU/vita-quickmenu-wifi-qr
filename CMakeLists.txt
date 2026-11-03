@@ -127,6 +127,7 @@ target_link_libraries(wifiqr_qm
   SceKernelThreadMgr_stub
   SceLibKernel_stub
   SceRtc_stub
+  SceKernelModulemgr_stub
   gcc
 )
 vita_create_self(wifiqr_qm.suprx wifiqr_qm CONFIG ${CMAKE_SOURCE_DIR}/qm.yml UNSAFE)

@@ -142,7 +142,23 @@ BUTTON_HANDLER(on_test_button) {
     uintptr_t f = 0;
     int rc = taiGetModuleExportFunc(WIFIQR_MODULE, WIFIQR_LIB_NID, WIFIQR_NID_SELFTEST, &f);
     log_printf("self-test button: lookup 0x%08x, function %08x", (unsigned)rc, (unsigned)f);
-    if (rc < 0) return;
+    if (rc < 0) {
+        // Not found: list what is loaded in this process, to see whether the core is there.
+        static SceUID ids[256];
+        SceSize n = 256;
+        int lrc = sceKernelGetModuleList(0xFF, ids, &n);
+        log_printf("modules in this process: 0x%08x, %u", (unsigned)lrc, (unsigned)n);
+        for (SceSize i = 0; lrc >= 0 && i < n; i++) {
+            static SceKernelModuleInfo info;
+            sceClibMemset(&info, 0, sizeof info);
+            info.size = sizeof info;
+            if (sceKernelGetModuleInfo(ids[i], &info) >= 0)
+                log_printf("  %-27s %p %s", info.module_name, info.segments[0].vaddr, info.path);
+        }
+        sceClibSnprintf(status, sizeof status, "Core not found (0x%08X): module list in the log", (unsigned)rc);
+        show(STATUS_ID, status);
+        return;
+    }
     rc = ((wifiqrSelfTest_fn)f)(on_selftest_report, NULL);
     log_printf("self-test button: returned 0x%08x", (unsigned)rc);
     sceClibSnprintf(status, sizeof status, "Self-test finished (0x%08X): see ux0:data/wifiqr/log.txt", (unsigned)rc);
