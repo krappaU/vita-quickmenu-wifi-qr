@@ -254,10 +254,12 @@ done:
 // --- API (wifiqr_api.h) -----------------------------------------------------------------------
 
 int wifiqrScan(const WifiQrListener *l) {
+    log_printf("api: scan requested (listener %p, size %u)", (const void *)l, l ? l->size : 0);
     if (busy) return WIFIQR_ERROR_BUSY;
     sceClibMemset(&listener, 0, sizeof listener);
     if (l) sceClibMemcpy(&listener, l, l->size < sizeof listener ? l->size : sizeof listener);
     load_config();
+    log_printf("api: config read, starting the worker");
     SceUID th = sceKernelCreateThread("wifiqr_worker", worker, WORKER_PRIORITY, 0x10000, 0, 0, NULL);
     if (th < 0) {
         log_printf("worker thread: 0x%08x", (unsigned)th);
@@ -266,7 +268,8 @@ int wifiqrScan(const WifiQrListener *l) {
     busy = 1;
     cancel = 0;
     if (listener.busy) listener.busy(1, listener.ud);
-    sceKernelStartThread(th, 0, NULL);
+    int rc = sceKernelStartThread(th, 0, NULL);
+    log_printf("api: worker 0x%08x started: 0x%08x", (unsigned)th, (unsigned)rc);
     return 0;
 }
 

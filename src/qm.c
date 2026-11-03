@@ -67,6 +67,7 @@ static int find_core(void) {
         int rc = taiGetModuleExportFunc(WIFIQR_MODULE, WIFIQR_LIB_NID, nids[i], &f[i]);
         if (rc < 0) return rc;
     }
+    log_printf("core functions: scan %08x cancel %08x busy %08x", (unsigned)f[0], (unsigned)f[1], (unsigned)f[2]);
     core.scan = (wifiqrScan_fn)f[0];
     core.cancel = (wifiqrCancel_fn)f[1];
     core.is_busy = (wifiqrIsBusy_fn)f[2];
@@ -140,12 +141,15 @@ BUTTON_HANDLER(on_button) {
         show(STATUS_ID, status);
         return;
     }
+    log_printf("scan button: asking the core whether it is busy");
     if (core.is_busy()) {
         core.cancel();
         return;
     }
     load_config();
+    log_printf("scan button: starting the scan");
     rc = core.scan(&listener);
+    log_printf("scan button: core returned 0x%08x", (unsigned)rc);
     if (rc < 0) {
         sceClibSnprintf(status, sizeof status, "Couldn't start (0x%08X)", (unsigned)rc);
         show(STATUS_ID, status);
