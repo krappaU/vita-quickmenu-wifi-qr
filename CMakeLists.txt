@@ -104,6 +104,7 @@ target_link_libraries(wifiqr
   SceKernelThreadMgr_stub
   SceLibKernel_stub
   taihen_stub  # net_dyn.c: the network libraries are looked up, not imported
+  SceKernelModulemgr_stub  # popup.cpp: finds SceShell's code
   SceRegistryMgr_stub
   SceRtc_stub
   SceSysmem_stub

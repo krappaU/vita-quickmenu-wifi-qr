@@ -17,7 +17,7 @@
 #define WIFIQR_NID_OPENWIFI 0xFB224694u
 
 #define WIFIQR_ERROR_BUSY ((int)0x80010010) // a scan is already running
-#define WIFIQR_ERROR_POPUP_NOT_LOADED ((int)0x80010002) // the Wi-Fi Settings popup isn't loaded
+#define WIFIQR_ERROR_UNSUPPORTED_FIRMWARE ((int)0x80010086) // the shell isn't firmware 3.65's
 
 // Callbacks from the core's worker thread. The structure is copied; ud is passed back as is.
 typedef struct {
@@ -40,7 +40,8 @@ typedef int (*wifiqrIsBusy_fn)(void);
 typedef void (*wifiqr_report_fn)(const char *text, void *ud);
 typedef int (*wifiqrSelfTest_fn)(wifiqr_report_fn report, void *ud);
 // Opens the system's Wi-Fi Settings popup (src/popup.cpp). Call it on the UI's main thread (a
-// widget's event handler). Returns 0, or the popup's error, or WIFIQR_ERROR_POPUP_NOT_LOADED.
+// widget's event handler). Returns 0 once the shell has queued the popup, WIFIQR_ERROR_BUSY if it is
+// already open, WIFIQR_ERROR_UNSUPPORTED_FIRMWARE, or the error that kept it from being found.
 typedef int (*wifiqrOpenWifiSettings_fn)(void);
 
 #endif

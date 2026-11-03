@@ -58,20 +58,43 @@ functions:
 The module also sets a separate module interface (`paf::Module::SetInterface(1, 0x8101D020)`:
 load, start and stop callbacks).
 
-`src/popup.cpp` (in the core) reaches it with `paf::Plugin::Find("impose_net_plugin")` (NID
-`0x004D98CC`, matching the plugin's own import) and `paf::Plugin::GetInterface(1)` (`0x1DF2C6FD`).
+Once loaded it can be reached with `paf::Plugin::Find("impose_net_plugin")` (NID `0x004D98CC`)
+and `paf::Plugin::GetInterface(1)` (`0x1DF2C6FD`), which is what the shell's own callbacks do.
 
 ## Loading it
 
 The plugin is loaded only when the shell needs it: from the Quick Menu, `Plugin::Find` returns
-NULL (2026-11-03). Its module interface (`paf::Module::SetInterface(1, 0x8101D020)`) holds the
-plugin callbacks a `Plugin::LoadAsync` with `module_file = vs0:vsh/shell/impose_net_plugin.suprx`
-uses: set-param (`0x81000034`, stores 50), init (`0x8100003A`: creates the popup's state, then
-`SetInterface(1, …)` and `SetInitEventHandler`), start, stop and exit. So the shell loads it with
-`Plugin::LoadAsync`. When the popup loads the keyboard plugin the same way (`0x810046B0`), it
-first makes a `SurfacePool` (0x12C000 bytes) and a `HeapAllocator` (0xD4000 bytes) out of memory
-it owns, and sets name, caller name, resource file, module file, interface version 1, module
-option 1, option 16 and a few arguments. The shell's values for impose_net_plugin need shell.self.
+NULL (2026-11-03). Read from `vs0:vsh/shell/shell.self` (3.65, code segment at `0x81000000`):
+
+- `0x810e26cc` **open(exec_mode, done, userdata)**: returns -1 if `done` is NULL; otherwise makes a
+  `0x30`-byte request (`+8` done, `+0xC` userdata, `+0x10` exec_mode; vtable `0x8152fda8`) and
+  queues it (`0x810e1eda`) with the shell's popup memory manager (global `0x81544468`, guarded by
+  an `RMutex`, serviced through `MainThreadCallList`: it never blocks the caller). `0x810e290a`
+  cancels. The shell's network service reaches both through a callback table at `0x815021b4`
+  (entries 3 and 4), passing exec_mode 1 for its usual requests and 0 otherwise; nothing exports
+  them.
+- When memory is free the manager calls the request's load method (`0x810e29da`) with a block of
+  at least `0xFA000` bytes: a `SurfacePool` of `0xAF000` bytes at its start, a `HeapAllocator`
+  ("SceImposeNetPluginPrivateHeap") of `0x4B000` after it, then `Plugin::LoadAsync(param,
+  0x810e2d6b, 1)` with name `impose_net_plugin`, caller `__main__`, resource and module files
+  `vs0:vsh/shell/impose_net_plugin.{rco,suprx}`, interface version 1, module option 1, option 28,
+  `surface_pool`, `private_heap`, `unload_callback = 0x810e2df7`, `param` = the request, and the
+  int arguments `userdata` (the request), `memblockaddr` (block + `0xFA000`, the rest of the block:
+  the popup loads the keyboard plugin there, `0x200000` bytes) and `exec_mode`.
+- The load-finished callback reads `userdata` back and calls the popup's `open(0x810e2ed3,
+  request)`; that callback stores the result (`0x80102408` if cancelled) and calls
+  `Plugin::UnloadAsync("impose_net_plugin")`; the unload callback frees the pool and heap and then
+  calls the request's `done(a, b, c, result, userdata)`.
+
+`src/popup.cpp` calls the open function directly: it takes SceShell's code segment from
+`sceKernelGetModuleInfo`, adds `0xE26CC`, and calls it only if the first 24 bytes there are the
+ones 3.65 has. The shell then handles memory, loading and unloading as for its own requests.
+
+In the popup, `exec_mode` is stored and, when 0, a check of `/CONFIG/NET/ap_auto_config` runs first
+(`0x810052c0`).
+
+The popup itself loads the keyboard plugin the same way (`0x810046B0`): a `SurfacePool`
+(0x12C000 bytes) and a `HeapAllocator` (0xD4000 bytes) at `memblockaddr`.
 
 PAF NIDs: [GrapheneCt/ScePaf-RE](https://github.com/GrapheneCt/ScePaf-RE) `lib/*.emd`; a NID is
 the first 4 bytes of SHA-1 of the mangled name plus the library's `nidsuffix`, little-endian.

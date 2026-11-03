@@ -129,12 +129,14 @@ Things only a real Vita can answer. The log shows each of them:
       (full at 512 KB). Frames are real; decoding a 640×480 frame takes 35–45 ms.
 - [x] **A printed code decodes on the console** (2026-11-02, a router's label, first try with the
       picture preview) and the network is saved (slot 5, `wifi_security` 2).
-- [ ] **A code on a phone screen decodes on the console.** Snapshots of 2026-11-02 were sharp but
-      quirc couldn't group Android's rounded corner squares (ZXing read them); with the centre-based
-      grouping they decode on a PC. With `snapshots=1`, the first frame of each kind that didn't
+- [x] **A code on a phone screen decodes on the console** (2026-11-02) with the centre-based
+      grouping of Android's rounded corner squares, which plain quirc couldn't group. With `snapshots=1`, the first frame of each kind that didn't
       decode is saved as `ux0:data/wifiqr/frame-<kind>.pgm`.
 - [x] **A saved profile is correct:** it shows in Settings and connects after a reboot (2026-11-02).
-- [ ] **It connects without a reboot** now that the shell's copy is updated too.
+- [x] **It connects without a reboot** now that the shell's copy is updated too (2026-11-03).
+- [ ] **The Quick Menu's "Wi-Fi Settings" button opens the system popup** through the shell's own
+      loader (`docs/impose_net.md`, "Loading it"); the log shows `wifi popup: open -> 0x00000000`
+      and, after it closes, `wifi popup closed: result …`. Firmware 3.65 only.
 - [ ] **Scanning in games:** the camera delivers no frames to SceShell while a game is in the
       foreground (2026-11-02: the buffer stayed untouched). Works in LiveArea.
 - [ ] **The DNS lookup starts the connection.** `netctl state: connecting` should follow

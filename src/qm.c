@@ -103,9 +103,19 @@ static void open_wifi_popup(void) {
         show(STATUS_ID, status);
         return;
     }
-    QuickMenuRebornCloseMenu(); // the popup opens over the menu otherwise
     rc = ((wifiqrOpenWifiSettings_fn)f)();
-    if (rc < 0) sceClibSnprintf(status, sizeof status, "Couldn't open the Wi-Fi popup (0x%08X)", (unsigned)rc);
+    log_printf("wifi button: core returned 0x%08x", (unsigned)rc);
+    if (rc >= 0) {
+        QuickMenuRebornCloseMenu(); // the popup shows once the menu is out of the way
+        return;
+    }
+    if (rc == WIFIQR_ERROR_UNSUPPORTED_FIRMWARE)
+        sceClibSnprintf(status, sizeof status, "Wi-Fi Settings: needs firmware 3.65");
+    else if (rc == WIFIQR_ERROR_BUSY)
+        sceClibSnprintf(status, sizeof status, "Wi-Fi Settings is already open");
+    else
+        sceClibSnprintf(status, sizeof status, "Couldn't open Wi-Fi Settings (0x%08X)", (unsigned)rc);
+    show(STATUS_ID, status);
 }
 
 // --- widgets ----------------------------------------------------------------------------------
