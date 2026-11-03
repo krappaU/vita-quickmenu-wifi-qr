@@ -13,10 +13,6 @@
 #include "viewfinder.h"
 #include "wifiqr_api.h"
 
-// paf::Plugin::Find and paf::Plugin::GetInterface (stubs/ScePafToplevel.yml), called by their
-// mangled names: a member function takes the object as its first argument.
-void *_ZN3paf6Plugin4FindEPKc(const char *name);
-void *_ZNK3paf6Plugin12GetInterfaceEi(const void *plugin, int version);
 
 // Not the IDs the single-plugin version (wifiqr.suprx in ur0:QuickMenuReborn/) used: if that is
 // still installed, two widgets with one ID would corrupt QuickMenuReborn's widget list.
@@ -96,36 +92,19 @@ static void on_busy(int busy, void *ud) {
 
 static const WifiQrListener listener = {sizeof(WifiQrListener), on_status, on_view, on_busy, NULL};
 
-// --- the system's Wi-Fi Settings popup ---------------------------------------------------------
-//
-// impose_net_plugin (the popup, in SceShell) publishes a version-1 interface of two functions
-// (3.65 build: SetInterface(1, table) in its start-up code):
-//   open(callback, userdata): returns 0 or an error (0x80102403 with a NULL callback or while
-//     busy); when the popup closes it calls callback(state 0x38, 0x3c, 0x40, result, userdata)
-//   close(): closes it with result 0x80102402
-typedef void (*popup_done_fn)(int a, int b, int c, int result, void *ud);
-typedef struct {
-    int (*open)(popup_done_fn done, void *ud);
-    int (*close)(void);
-} impose_net_iface;
-
-static void on_popup_done(int a, int b, int c, int result, void *ud) {
-    (void)ud;
-    log_printf("wifi popup closed: result 0x%08x (%d %d %d)", (unsigned)result, a, b, c);
-}
+// --- the system's Wi-Fi Settings popup, opened by the core (src/popup.cpp) --------------------
 
 static void open_wifi_popup(void) {
-    void *plugin = _ZN3paf6Plugin4FindEPKc("impose_net_plugin");
-    const impose_net_iface *iface = plugin ? _ZNK3paf6Plugin12GetInterfaceEi(plugin, 1) : NULL;
-    log_printf("wifi popup: plugin %p, interface %p", plugin, (const void *)iface);
-    if (!iface) {
-        sceClibSnprintf(status, sizeof status, "The Wi-Fi popup isn't loaded (plugin %p)", plugin);
+    uintptr_t f = 0;
+    int rc = taiGetModuleExportFunc(WIFIQR_MODULE, WIFIQR_LIB_NID, WIFIQR_NID_OPENWIFI, &f);
+    if (rc < 0) {
+        sceClibSnprintf(status, sizeof status, "Wi-Fi QR core not loaded: add wifiqr.suprx under *main (0x%08X)",
+                        (unsigned)rc);
         show(STATUS_ID, status);
         return;
     }
     QuickMenuRebornCloseMenu(); // the popup opens over the menu otherwise
-    int rc = iface->open(on_popup_done, NULL);
-    log_printf("wifi popup: open -> 0x%08x", (unsigned)rc);
+    rc = ((wifiqrOpenWifiSettings_fn)f)();
     if (rc < 0) sceClibSnprintf(status, sizeof status, "Couldn't open the Wi-Fi popup (0x%08X)", (unsigned)rc);
 }
 

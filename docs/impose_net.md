@@ -58,8 +58,20 @@ functions:
 The module also sets a separate module interface (`paf::Module::SetInterface(1, 0x8101D020)`:
 load, start and stop callbacks).
 
-`src/qm.c` reaches it with `paf::Plugin::Find("impose_net_plugin")` (NID `0x004D98CC`, matching
-the plugin's own import) and `paf::Plugin::GetInterface(1)` (`0x1DF2C6FD`, from ScePaf-RE).
+`src/popup.cpp` (in the core) reaches it with `paf::Plugin::Find("impose_net_plugin")` (NID
+`0x004D98CC`, matching the plugin's own import) and `paf::Plugin::GetInterface(1)` (`0x1DF2C6FD`).
+
+## Loading it
+
+The plugin is loaded only when the shell needs it: from the Quick Menu, `Plugin::Find` returns
+NULL (2026-11-03). Its module interface (`paf::Module::SetInterface(1, 0x8101D020)`) holds the
+plugin callbacks a `Plugin::LoadAsync` with `module_file = vs0:vsh/shell/impose_net_plugin.suprx`
+uses: set-param (`0x81000034`, stores 50), init (`0x8100003A`: creates the popup's state, then
+`SetInterface(1, …)` and `SetInitEventHandler`), start, stop and exit. So the shell loads it with
+`Plugin::LoadAsync`. When the popup loads the keyboard plugin the same way (`0x810046B0`), it
+first makes a `SurfacePool` (0x12C000 bytes) and a `HeapAllocator` (0xD4000 bytes) out of memory
+it owns, and sets name, caller name, resource file, module file, interface version 1, module
+option 1, option 16 and a few arguments. The shell's values for impose_net_plugin need shell.self.
 
 PAF NIDs: [GrapheneCt/ScePaf-RE](https://github.com/GrapheneCt/ScePaf-RE) `lib/*.emd`; a NID is
 the first 4 bytes of SHA-1 of the mangled name plus the library's `nidsuffix`, little-endian.

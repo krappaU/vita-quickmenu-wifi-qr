@@ -14,8 +14,10 @@
 #define WIFIQR_NID_CANCEL 0x656D8F50u
 #define WIFIQR_NID_ISBUSY 0xCF961134u
 #define WIFIQR_NID_SELFTEST 0x4D6EA946u
+#define WIFIQR_NID_OPENWIFI 0xFB224694u
 
 #define WIFIQR_ERROR_BUSY ((int)0x80010010) // a scan is already running
+#define WIFIQR_ERROR_POPUP_NOT_LOADED ((int)0x80010002) // the Wi-Fi Settings popup isn't loaded
 
 // Callbacks from the core's worker thread. The structure is copied; ud is passed back as is.
 typedef struct {
@@ -37,5 +39,8 @@ typedef int (*wifiqrIsBusy_fn)(void);
 // each step through report(text, ud) before and after the call.
 typedef void (*wifiqr_report_fn)(const char *text, void *ud);
 typedef int (*wifiqrSelfTest_fn)(wifiqr_report_fn report, void *ud);
+// Opens the system's Wi-Fi Settings popup (src/popup.cpp). Call it on the UI's main thread (a
+// widget's event handler). Returns 0, or the popup's error, or WIFIQR_ERROR_POPUP_NOT_LOADED.
+typedef int (*wifiqrOpenWifiSettings_fn)(void);
 
 #endif

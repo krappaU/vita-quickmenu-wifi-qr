@@ -8,11 +8,11 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   endif()
 endif()
 
-project(wifiqr C)
+project(wifiqr C CXX)
 include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
 set(TP ${CMAKE_SOURCE_DIR}/third_party)
-if(NOT EXISTS ${TP}/QuickMenuReborn/QuickMenuReborn.yml OR NOT EXISTS ${TP}/quirc/lib/quirc.c)
+if(NOT EXISTS ${TP}/QuickMenuReborn/QuickMenuReborn.yml OR NOT EXISTS ${TP}/quirc/lib/quirc.c OR NOT EXISTS ${TP}/paf/include/paf.h)
   message(FATAL_ERROR "Run scripts/fetch_deps.sh first")
 endif()
 
@@ -37,15 +37,20 @@ add_custom_command(
   DEPENDS ${CMAKE_SOURCE_DIR}/stubs/SceShell.yml)
 add_custom_target(shell_stubs DEPENDS ${SHELL_STUBS}/libSceShell_stub_weak.a)
 
-# The two PAF functions the Quick Menu button uses (stubs/ScePafToplevel.yml), linked weakly.
+# The shell's UI library (PAF): stubs for the libraries the core uses, from ScePaf-RE's NID tables
+# (scripts/paf_yml.py). PAF is part of the shell's process from the start (ScePaf is in its
+# module list next to SceShell), so these are ordinary, not weak, imports.
+set(PAF_LIBS ScePafStdc ScePafToplevel ScePafWidget ScePafMisc ScePafCommon ScePafGraphics ScePafThread ScePafResource)
 set(PAF_STUBS ${CMAKE_BINARY_DIR}/paf_stubs)
+set(PAF_STUB_FILES)
+foreach(lib ${PAF_LIBS})
+  list(APPEND PAF_STUB_FILES ${PAF_STUBS}/lib${lib}_stub.a)
+endforeach()
 add_custom_command(
-  OUTPUT ${PAF_STUBS}/libScePafToplevel_stub_weak.a
-  COMMAND ${CMAKE_COMMAND} -E make_directory ${PAF_STUBS}
-  COMMAND vita-libs-gen ${CMAKE_SOURCE_DIR}/stubs/ScePafToplevel.yml ${PAF_STUBS}
-  COMMAND make -C ${PAF_STUBS} -s
-  DEPENDS ${CMAKE_SOURCE_DIR}/stubs/ScePafToplevel.yml)
-add_custom_target(paf_stubs DEPENDS ${PAF_STUBS}/libScePafToplevel_stub_weak.a)
+  OUTPUT ${PAF_STUB_FILES}
+  COMMAND sh ${CMAKE_SOURCE_DIR}/scripts/paf_stubs.sh ${TP}/paf/lib ${PAF_STUBS} ${PAF_LIBS}
+  DEPENDS ${CMAKE_SOURCE_DIR}/scripts/paf_yml.py ${CMAKE_SOURCE_DIR}/scripts/paf_stubs.sh)
+add_custom_target(paf_stubs DEPENDS ${PAF_STUB_FILES})
 
 # The header is included as <quickmenureborn/qm_reborn.h>.
 set(QMR_INC ${CMAKE_BINARY_DIR}/qmr_include)
@@ -61,6 +66,7 @@ add_compile_definitions(QUIRC_FLOAT_TYPE=float QUIRC_USE_TGMATH)
 # of the shell's process: the network libraries are looked up at run time (src/net_dyn.h).
 add_executable(wifiqr
   src/core.c
+  src/popup.cpp
   src/connect.c
   src/libc_shim.c
   src/log.c
@@ -77,17 +83,22 @@ add_executable(wifiqr
   ${TP}/quirc/lib/quirc.c
   ${TP}/quirc/lib/version_db.c
 )
-add_dependencies(wifiqr shell_stubs wifiqr_kernel_stubs)
-target_include_directories(wifiqr PRIVATE src kernel ${TP}/quirc/lib)
+add_dependencies(wifiqr shell_stubs paf_stubs wifiqr_kernel_stubs)
+target_include_directories(wifiqr PRIVATE src kernel ${TP}/quirc/lib ${TP}/paf/include)
+# PAF's C++ conventions: no exceptions or RTTI, its 16-bit wchar_t, no C++ runtime of our own.
+target_compile_options(wifiqr PRIVATE
+  "$<$<COMPILE_LANGUAGE:CXX>:-O2;-fno-rtti;-fno-exceptions;-fno-builtin;-fshort-wchar;-fno-threadsafe-statics;-fno-sized-deallocation;-Wno-unused-function;-Wno-sign-compare;-Wno-template-body;-D__declspec(x)=;-include;limits>")
 # quirc's own warnings are not ours to fix
 set_source_files_properties(${TP}/quirc/lib/decode.c src/quirc_ext.c ${TP}/quirc/lib/quirc.c
   ${TP}/quirc/lib/version_db.c PROPERTIES COMPILE_FLAGS "-w")
 
-target_link_directories(wifiqr PRIVATE ${SHELL_STUBS} ${CMAKE_BINARY_DIR}/wifiqr_kernel_stubs)
+target_link_directories(wifiqr PRIVATE ${SHELL_STUBS} ${PAF_STUBS} ${CMAKE_BINARY_DIR}/wifiqr_kernel_stubs)
 target_link_options(wifiqr PRIVATE -nostdlib)
 target_link_libraries(wifiqr
   WifiQrKernel_stub_weak  # optional: without the kernel plugin, its calls just fail
   SceShell_stub_weak
+  ScePafToplevel_stub
+  ScePafStdc_stub
   SceCamera_stub
   SceIofilemgr_stub
   SceKernelThreadMgr_stub
@@ -109,13 +120,12 @@ add_custom_command(TARGET wifiqr POST_BUILD
 
 # Quick Menu button: wifiqr_qm.suprx, loaded by QuickMenuReborn. Only widgets; calls the core.
 add_executable(wifiqr_qm src/qm.c src/log.c)
-add_dependencies(wifiqr_qm qmr_stubs paf_stubs)
+add_dependencies(wifiqr_qm qmr_stubs)
 target_include_directories(wifiqr_qm PRIVATE src ${QMR_INC})
-target_link_directories(wifiqr_qm PRIVATE ${QMR_STUBS} ${PAF_STUBS})
+target_link_directories(wifiqr_qm PRIVATE ${QMR_STUBS})
 target_link_options(wifiqr_qm PRIVATE -nostdlib)
 target_link_libraries(wifiqr_qm
   QuickMenuReborn_stub
-  ScePafToplevel_stub_weak
   taihen_stub
   SceIofilemgr_stub
   SceKernelThreadMgr_stub
