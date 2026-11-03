@@ -282,7 +282,9 @@ int wifiqrIsBusy(void) { return busy; }
 
 int module_start(SceSize args, void *argp) {
     (void)args, (void)argp;
-    // Nothing until a front end asks: this runs early in the shell's start-up.
+    // Nothing until a front end asks: this runs early in the shell's start-up. One log line, to
+    // tell from the log whether a crash came before or after the core loaded.
+    log_printf("core (wifiqr) loaded");
     return SCE_KERNEL_START_SUCCESS;
 }
 

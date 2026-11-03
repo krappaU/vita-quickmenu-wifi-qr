@@ -18,12 +18,14 @@
 void *_ZN3paf6Plugin4FindEPKc(const char *name);
 void *_ZNK3paf6Plugin12GetInterfaceEi(const void *plugin, int version);
 
-#define SEPARATOR_ID "wifiqr_separator"
-#define TITLE_ID "wifiqr_title"
-#define BUTTON_ID "wifiqr_button"
-#define STATUS_ID "wifiqr_status"
-#define VIEW_ID "wifiqr_view"
-#define WIFI_BUTTON_ID "wifiqr_wifi_button"
+// Not the IDs the single-plugin version (wifiqr.suprx in ur0:QuickMenuReborn/) used: if that is
+// still installed, two widgets with one ID would corrupt QuickMenuReborn's widget list.
+#define SEPARATOR_ID "wifiqr_qm_separator"
+#define TITLE_ID "wifiqr_qm_title"
+#define BUTTON_ID "wifiqr_qm_button"
+#define STATUS_ID "wifiqr_qm_status"
+#define VIEW_ID "wifiqr_qm_view"
+#define WIFI_BUTTON_ID "wifiqr_qm_wifi_button"
 
 #define BUTTON_SCAN "Scan Wi-Fi QR"
 #define BUTTON_CANCEL "Cancel"
@@ -131,6 +133,7 @@ static void open_wifi_popup(void) {
 BUTTON_HANDLER(on_button) {
     (void)id, (void)hash, (void)eventId, (void)userDat;
     int rc = find_core();
+    log_printf("scan button: core lookup 0x%08x", (unsigned)rc);
     if (rc < 0) {
         sceClibSnprintf(status, sizeof status, "Wi-Fi QR core not loaded: add wifiqr.suprx under *main (0x%08X)",
                         (unsigned)rc);
@@ -166,6 +169,7 @@ ONLOAD_HANDLER(on_load) {
 
 int module_start(SceSize args, void *argp) {
     (void)args, (void)argp;
+    log_printf("button plugin (wifiqr_qm) loaded");
     load_config();
     QuickMenuRebornSeparator(SEPARATOR_ID, SCE_SEPARATOR_HEIGHT);
 
