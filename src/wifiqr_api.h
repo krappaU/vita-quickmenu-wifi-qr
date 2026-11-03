@@ -13,6 +13,7 @@
 #define WIFIQR_NID_SCAN 0x4E7E790Au
 #define WIFIQR_NID_CANCEL 0x656D8F50u
 #define WIFIQR_NID_ISBUSY 0xCF961134u
+#define WIFIQR_NID_SELFTEST 0x4D6EA946u
 
 #define WIFIQR_ERROR_BUSY ((int)0x80010010) // a scan is already running
 
@@ -32,5 +33,9 @@ typedef int (*wifiqrScan_fn)(const WifiQrListener *listener);
 typedef int (*wifiqrCancel_fn)(void);
 // 1 while a scan, save or connection is running.
 typedef int (*wifiqrIsBusy_fn)(void);
+// Diagnostic (src/selftest.c): calls one function of each library the core imports, reporting
+// each step through report(text, ud) before and after the call.
+typedef void (*wifiqr_report_fn)(const char *text, void *ud);
+typedef int (*wifiqrSelfTest_fn)(wifiqr_report_fn report, void *ud);
 
 #endif

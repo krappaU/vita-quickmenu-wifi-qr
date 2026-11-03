@@ -10,6 +10,7 @@ want = {
     "wifiqrScan": "WIFIQR_NID_SCAN",
     "wifiqrCancel": "WIFIQR_NID_CANCEL",
     "wifiqrIsBusy": "WIFIQR_NID_ISBUSY",
+    "wifiqrSelfTest": "WIFIQR_NID_SELFTEST",
 }
 ok = True
 lib = re.search(r"WifiQr:\s*\n\s*nid:\s*(0x[0-9a-fA-F]+)", exports.split("libraries:")[1])

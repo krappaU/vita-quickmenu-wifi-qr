@@ -14,3 +14,4 @@ WifiQr:
         - wifiqrScan
         - wifiqrCancel
         - wifiqrIsBusy
+        - wifiqrSelfTest
